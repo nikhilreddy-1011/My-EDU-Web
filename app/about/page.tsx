@@ -33,17 +33,17 @@ const EXECUTIVE_LEADERSHIP = [
         imagePosition: 'object-top',
     },
     {
-        name: 'Kruti Kahane',
-        position: 'CMO',
-        role: 'Chief Marketing Officer (CMO)',
-        image: '/team/kruti-kahane.jpg',
-        imagePosition: 'object-center',
-    },
-    {
         name: 'Akanksha Gotarne',
         position: 'CMO',
         role: 'Chief Marketing Officer (CMO)',
         image: '/team/akanksha-gotarne-v3.jpg',
+        imagePosition: 'object-center',
+    },
+    {
+        name: 'Kruti Kahane',
+        position: 'CMO',
+        role: 'Chief Marketing Officer (CMO)',
+        image: '/team/kruti-kahane.jpg',
         imagePosition: 'object-center',
     },
     {

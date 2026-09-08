@@ -538,5 +538,42 @@ const getActiveMeetingParticipants = (meetingId) => {
     return Array.from(session.acceptedParticipants.values());
 };
 
-module.exports = { initSocket, getIO, getActiveMeetingParticipants };
+const isUserAdmitted = (meetingId, userId) => {
+    if (!meetingId || !userId) return false;
+    const session = meetingSessions.get(meetingId);
+    if (!session || !session.acceptedParticipants) return false;
+    return session.acceptedParticipants.has(String(userId));
+};
+
+const admitUserToMeeting = (meetingId, userObj) => {
+    if (!meetingId || !userObj) return;
+    const userId = String(userObj._id || userObj.id || userObj.userId);
+    if (!meetingSessions.has(meetingId)) {
+        meetingSessions.set(meetingId, {
+            meetingId,
+            hostUserId: userObj.role === 'TEACHER' || userObj.role === 'ADMIN' ? userId : null,
+            acceptedParticipants: new Map(),
+            waitingRequests: new Map(),
+        });
+    }
+    const session = meetingSessions.get(meetingId);
+    session.waitingRequests.delete(userId);
+    session.acceptedParticipants.set(userId, {
+        id: userId,
+        userId,
+        name: userObj.name || 'User',
+        role: userObj.role || 'STUDENT',
+        isTeacher: userObj.role === 'TEACHER' || userObj.role === 'ADMIN',
+        joinedAt: new Date(),
+    });
+};
+
+module.exports = {
+    initSocket,
+    getIO,
+    getActiveMeetingParticipants,
+    isUserAdmitted,
+    admitUserToMeeting,
+};
+
 

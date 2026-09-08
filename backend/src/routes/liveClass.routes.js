@@ -7,6 +7,7 @@ const {
     updateLiveClassStatus,
     deleteLiveClass,
     checkLiveClassAccess,
+    getLiveKitToken,
 } = require('../controllers/liveClassController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -17,6 +18,12 @@ router.route('/')
 // Access check: verifies authenticated student enrollment or teacher ownership
 router.route('/:id/access')
     .get(protect, checkLiveClassAccess);
+
+// LiveKit WebRTC Token generation
+router.route('/:id/livekit-token')
+    .get(protect, getLiveKitToken)
+    .post(protect, getLiveKitToken);
+
 
 router.route('/:id')
     .get(getLiveClassById)

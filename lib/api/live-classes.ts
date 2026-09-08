@@ -107,3 +107,26 @@ export const checkLiveClassAccess = async (id: string, token?: string | null): P
     });
 };
 
+export interface LiveKitTokenResponse {
+    success: boolean;
+    token?: string;
+    serverUrl?: string;
+    roomName?: string;
+    admitted?: boolean;
+    participant?: {
+        identity: string;
+        name: string;
+        role: string;
+        isTeacher: boolean;
+    };
+    message?: string;
+}
+
+export const getLiveKitToken = async (id: string, token?: string | null): Promise<LiveKitTokenResponse> => {
+    return apiClient<LiveKitTokenResponse>(`/api/v1/live-classes/${id}/livekit-token`, {
+        method: 'GET',
+        token,
+    });
+};
+
+

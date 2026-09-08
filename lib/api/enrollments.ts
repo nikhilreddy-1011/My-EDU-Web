@@ -79,3 +79,49 @@ export interface MyCoursesListResponse {
 export const getMyCoursesList = async (): Promise<MyCoursesListResponse> => {
     return apiClient<MyCoursesListResponse>('/api/v1/enrollments/my-courses');
 };
+
+export interface StudentDashboardStats {
+    overallProgress: number;
+    coursesInProgress: number;
+    coursesCompleted: number;
+    learningHours: number;
+    currentStreak: number;
+    totalEnrolled: number;
+    weeklyActivity: { day: string; hours: number; lessonsCompleted: number }[];
+}
+
+export interface StudentDashboardResponse {
+    success: boolean;
+    stats: StudentDashboardStats;
+    continueLearning: any[];
+    inProgress: any[];
+    completed: any[];
+    enrollments?: any[];
+}
+
+export const getStudentDashboard = async (): Promise<StudentDashboardResponse> => {
+    return apiClient<StudentDashboardResponse>('/api/v1/enrollments/dashboard');
+};
+
+export const completeLesson = async (
+    courseId: string,
+    lessonId: string
+): Promise<{
+    success: boolean;
+    progress: number;
+    completedLessons: string[];
+    currentLesson: string;
+    isCompleted: boolean;
+    enrollment: any;
+}> => {
+    return apiClient(`/api/v1/enrollments/${courseId}/lessons/${lessonId}/complete`, {
+        method: 'POST',
+    });
+};
+
+export const getCourseEnrollment = async (
+    courseId: string
+): Promise<{ success: boolean; isEnrolled: boolean; enrollment: any }> => {
+    return apiClient(`/api/v1/enrollments/course/${courseId}`);
+};
+

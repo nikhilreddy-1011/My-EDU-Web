@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { Notification } from '@/types'
-import { notifications as initialNotifications } from '@/data/mock-data'
 
 interface AppState {
     // Notifications
     notifications: Notification[]
     unreadCount: number
+    setNotifications: (list: Notification[], unread?: number) => void
+    clearAllNotifications: () => void
     markAsRead: (id: string) => void
     markAllAsRead: () => void
     clearNotification: (id: string) => void
@@ -30,8 +31,22 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => ({
     // Notifications
-    notifications: initialNotifications,
-    unreadCount: initialNotifications.filter(n => !n.read).length,
+    notifications: [],
+    unreadCount: 0,
+
+    setNotifications: (list: Notification[], unread?: number) => {
+        set({
+            notifications: list,
+            unreadCount: typeof unread === 'number' ? unread : list.filter(n => !n.read).length,
+        })
+    },
+
+    clearAllNotifications: () => {
+        set({
+            notifications: [],
+            unreadCount: 0,
+        })
+    },
 
     markAsRead: (id: string) => {
         set(state => {

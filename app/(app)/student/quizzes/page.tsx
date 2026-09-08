@@ -1,18 +1,34 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { FileQuestion, Clock, CheckCircle2, BarChart3 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { quizzes, quizAttempts } from '@/data/mock-data'
+import { quizzes } from '@/data/mock-data'
+import { getMyQuizAttempts } from '@/lib/api/quizzes'
+import { useAuthStore } from '@/store/use-auth-store'
 import { formatDate, cn } from '@/lib/utils'
 
 export default function QuizzesListPage() {
+    const { isAuthenticated } = useAuthStore()
     const [tab, setTab] = useState<'available' | 'completed'>('available')
-    const completedIds = new Set(quizAttempts.map(a => a.quizId))
+    const [myAttempts, setMyAttempts] = useState<any[]>([])
+
+    useEffect(() => {
+        if (!isAuthenticated) return
+        getMyQuizAttempts()
+            .then(res => {
+                if (res && res.success && Array.isArray(res.attempts)) {
+                    setMyAttempts(res.attempts)
+                }
+            })
+            .catch(() => {})
+    }, [isAuthenticated])
+
+    const completedIds = new Set(myAttempts.map(a => a.quizId))
     const available = quizzes.filter(q => q.isPublished && !completedIds.has(q.id))
-    const completed = quizAttempts
+    const completed = myAttempts
 
     return (
         <AppLayout title="Quizzes">
@@ -80,7 +96,7 @@ export default function QuizzesListPage() {
                     ) : (
                         <div className="space-y-3">
                             {completed.map((attempt, i) => (
-                                <motion.div key={attempt.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
+                                <motion.div key={attempt.id || attempt._id || i} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
                                     className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-5 hover:shadow-card transition-all">
                                     <div className="flex items-center justify-between gap-4">
                                         <div className="flex gap-3">
@@ -88,8 +104,10 @@ export default function QuizzesListPage() {
                                                 {attempt.isPassed ? <CheckCircle2 size={18} className="text-success" /> : <BarChart3 size={18} className="text-accent" />}
                                             </div>
                                             <div>
-                                                <h3 className="font-semibold text-sm text-text-primary dark:text-dark-text mb-1">{attempt.quiz.title}</h3>
-                                                <p className="text-xs text-text-muted">{formatDate(attempt.completedAt)}</p>
+                                                <h3 className="font-semibold text-sm text-text-primary dark:text-dark-text mb-1">
+                                                    {attempt.quizTitle || attempt.quiz?.title || 'Quiz'}
+                                                </h3>
+                                                <p className="text-xs text-text-muted">{formatDate(attempt.completedAt || attempt.createdAt)}</p>
                                             </div>
                                         </div>
                                         <div className="text-right">

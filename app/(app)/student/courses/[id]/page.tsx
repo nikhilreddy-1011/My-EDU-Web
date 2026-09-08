@@ -10,12 +10,12 @@ import {
     Globe, BarChart2, ArrowLeft, Loader2, Sparkles, ShieldCheck, MessageSquare
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { courses as mockCourses, modulesForC1, enrollments as mockEnrollments, reviews } from '@/data/mock-data'
+import { courses as mockCourses, modulesForC1, reviews } from '@/data/mock-data'
 import { formatNumber, formatDate, cn } from '@/lib/utils'
 import { LessonType } from '@/types'
 import { useAuthStore } from '@/store/use-auth-store'
 import { getCourseById } from '@/lib/api/courses'
-import { getMyEnrollments, enrollInCourse } from '@/lib/api/enrollments'
+import { getMyEnrollments, enrollInCourse, getCourseEnrollment } from '@/lib/api/enrollments'
 import { createPaymentOrder, verifyPayment } from '@/lib/api/payments'
 import { addToWishlist, removeFromWishlist, checkWishlistStatus } from '@/lib/api/wishlist'
 import { loadRazorpayScript, RazorpayOptions } from '@/lib/razorpay'
@@ -141,26 +141,24 @@ export default function CourseDetailPage() {
 
             // 2. Resolve enrollment status
             let resolvedEnrollment = null
-            if (isAuthenticated) {
+            if (isAuthenticated && id) {
                 try {
-                    const enrollRes = await getMyEnrollments()
-                    if (enrollRes && enrollRes.success && Array.isArray(enrollRes.enrollments)) {
-                        const found = enrollRes.enrollments.find(
-                            (e: any) => e.course?._id === id || e.course === id || e.courseId === id
-                        )
-                        if (found) {
-                            resolvedEnrollment = found
+                    const singleRes = await getCourseEnrollment(id)
+                    if (singleRes && singleRes.success && singleRes.isEnrolled && singleRes.enrollment) {
+                        resolvedEnrollment = singleRes.enrollment
+                    } else {
+                        const enrollRes = await getMyEnrollments()
+                        if (enrollRes && enrollRes.success && Array.isArray(enrollRes.enrollments)) {
+                            const found = enrollRes.enrollments.find(
+                                (e: any) => e.course?._id === id || e.course === id || e.courseId === id
+                            )
+                            if (found) {
+                                resolvedEnrollment = found
+                            }
                         }
                     }
                 } catch {
-                    // Fallback to mock enrollments if API fails
-                }
-            }
-
-            if (!resolvedEnrollment) {
-                const mockEnr = mockEnrollments.find(e => e.courseId === id)
-                if (mockEnr) {
-                    resolvedEnrollment = mockEnr
+                    // Not enrolled or network failure
                 }
             }
 

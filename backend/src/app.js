@@ -18,6 +18,7 @@ const chatRoutes = require('./routes/chat.routes');
 const certificateRoutes = require('./routes/certificate.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const liveClassRoutes = require('./routes/liveClass.routes');
+const quizRoutes = require('./routes/quiz.routes');
 
 const app = express();
 
@@ -117,6 +118,7 @@ app.use('/api/v1/conversations', chatRoutes);
 app.use('/api/v1/certificates', certificateRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/live-classes', liveClassRoutes);
+app.use('/api/v1/quizzes', quizRoutes);
 
 // --------------------------------------------------
 // Error Handling (must be last)

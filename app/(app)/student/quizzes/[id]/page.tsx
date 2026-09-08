@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Clock, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
 import { quizzes } from '@/data/mock-data'
+import { submitQuizAttempt } from '@/lib/api/quizzes'
 import { cn } from '@/lib/utils'
 
 export default function QuizPage() {
@@ -40,13 +41,32 @@ export default function QuizPage() {
         setAnswers(prev => ({ ...prev, [currentQ]: optIdx }))
     }
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!quiz) return
+        setSubmitted(true)
         const score = quiz.questions.reduce((sum, q, i) => {
             return answers[i] === q.correctAnswer ? sum + q.points : sum
         }, 0)
         const total = quiz.questions.reduce((sum, q) => sum + q.points, 0)
         const pct = Math.round((score / total) * 100)
+
+        try {
+            await submitQuizAttempt({
+                quizId: quiz.id,
+                quizTitle: quiz.title,
+                score: pct,
+                passingScore: quiz.passingScore || 70,
+                answers: Object.entries(answers).map(([qIdx, ansIdx]) => ({
+                    questionIndex: Number(qIdx),
+                    selectedOption: ansIdx,
+                    isCorrect: quiz.questions[Number(qIdx)]?.correctAnswer === ansIdx,
+                })),
+            })
+        } catch (e) {
+            // Log but don't prevent user from seeing results
+            console.error('Failed to submit quiz attempt', e)
+        }
+
         router.push(`/student/quizzes/${id}/results?score=${pct}&time=${(quiz.duration * 60) - timeLeft}`)
     }
 

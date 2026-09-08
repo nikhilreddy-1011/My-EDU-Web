@@ -1,21 +1,18 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { TrendingUp, Clock, Award, Flame, BookOpen, Target, BarChart3 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { studentStats, userBadges, quizAttempts, enrollments } from '@/data/mock-data'
+import { userBadges } from '@/data/mock-data'
+import { getStudentDashboard } from '@/lib/api/enrollments'
+import { getMyQuizAttempts } from '@/lib/api/quizzes'
+import { useAuthStore } from '@/store/use-auth-store'
 import { cn } from '@/lib/utils'
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, LineChart, Line, Legend
+    RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Legend
 } from 'recharts'
-
-const quizScoreData = [
-    { name: 'React Hooks', score: 80, avg: 72 },
-    { name: 'UX Design', score: 100, avg: 78 },
-    { name: 'Python', score: 80, avg: 65 },
-]
 
 const radarData = [
     { subject: 'Web Dev', A: 85 },
@@ -25,15 +22,79 @@ const radarData = [
     { subject: 'Mobile', A: 20 },
 ]
 
+const initialStats = {
+    overallProgress: 0,
+    coursesInProgress: 0,
+    coursesCompleted: 0,
+    totalEnrolled: 0,
+    learningHours: 0,
+    currentStreak: 0,
+    longestStreak: 0,
+    weeklyActivity: [
+        { day: 'Mon', hours: 0 },
+        { day: 'Tue', hours: 0 },
+        { day: 'Wed', hours: 0 },
+        { day: 'Thu', hours: 0 },
+        { day: 'Fri', hours: 0 },
+        { day: 'Sat', hours: 0 },
+        { day: 'Sun', hours: 0 },
+    ],
+}
+
 export default function ProgressPage() {
-    const stats = studentStats
+    const { isAuthenticated } = useAuthStore()
+    const [stats, setStats] = useState(initialStats)
+    const [enrollmentList, setEnrollmentList] = useState<any[]>([])
+    const [quizAttemptsList, setQuizAttemptsList] = useState<any[]>([])
+
+    useEffect(() => {
+        if (!isAuthenticated) return
+
+        let isMounted = true
+        getStudentDashboard()
+            .then(res => {
+                if (isMounted && res && res.success) {
+                    if (res.stats) setStats(prev => ({ ...prev, ...res.stats }))
+                    if (Array.isArray(res.enrollments)) setEnrollmentList(res.enrollments)
+                    else if (Array.isArray(res.continueLearning)) setEnrollmentList(res.continueLearning)
+                }
+            })
+            .catch(() => {})
+
+        getMyQuizAttempts()
+            .then(res => {
+                if (isMounted && res && res.success && Array.isArray(res.attempts)) {
+                    setQuizAttemptsList(res.attempts)
+                }
+            })
+            .catch(() => {})
+
+        return () => {
+            isMounted = false
+        }
+    }, [isAuthenticated])
+
+    const quizAverage = quizAttemptsList.length > 0
+        ? Math.round(quizAttemptsList.reduce((sum, a) => sum + (a.score || 0), 0) / quizAttemptsList.length)
+        : 0
+
+    const dynamicQuizScores = quizAttemptsList.length > 0
+        ? quizAttemptsList.slice(0, 5).map(a => ({
+            name: (a.quiz?.title || a.quizTitle || 'Quiz').slice(0, 12),
+            score: a.score || 0,
+            avg: a.passingScore || 70,
+        }))
+        : [
+            { name: 'No Quizzes', score: 0, avg: 0 },
+        ]
+
     const topStatCards = [
         { label: 'Overall Completion', value: `${stats.overallProgress}%`, icon: <Target size={18} />, color: 'text-primary', bg: 'bg-primary-tint dark:bg-dark-surface2' },
         { label: 'Learning Hours', value: `${stats.learningHours}h`, icon: <Clock size={18} />, color: 'text-warning', bg: 'bg-yellow-50 dark:bg-yellow-900/10' },
-        { label: 'Quiz Average', value: `${stats.quizAverage}%`, icon: <BarChart3 size={18} />, color: 'text-success', bg: 'bg-green-50 dark:bg-green-900/10' },
+        { label: 'Quiz Average', value: `${quizAverage}%`, icon: <BarChart3 size={18} />, color: 'text-success', bg: 'bg-green-50 dark:bg-green-900/10' },
         { label: 'Courses Done', value: stats.coursesCompleted, icon: <BookOpen size={18} />, color: 'text-accent', bg: 'bg-orange-50 dark:bg-orange-900/10' },
         { label: 'Current Streak', value: `${stats.currentStreak}d`, icon: <Flame size={18} />, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/10' },
-        { label: 'Longest Streak', value: `${stats.longestStreak}d`, icon: <TrendingUp size={18} />, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/10' },
+        { label: 'Longest Streak', value: `${stats.longestStreak || stats.currentStreak}d`, icon: <TrendingUp size={18} />, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/10' },
     ]
 
     return (
@@ -75,43 +136,57 @@ export default function ProgressPage() {
 
                     {/* Quiz performance */}
                     <div className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-5">
-                        <h2 className="font-sora font-semibold text-base text-text-primary dark:text-dark-text mb-4">Quiz Performance vs Average</h2>
-                        <ResponsiveContainer width="100%" height={200}>
-                            <BarChart data={quizScoreData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                                <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-faint)' }} axisLine={false} tickLine={false} />
-                                <YAxis tick={{ fontSize: 11, fill: 'var(--text-faint)' }} axisLine={false} tickLine={false} domain={[0, 100]} />
-                                <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', fontSize: '12px' }} />
-                                <Legend wrapperStyle={{ fontSize: '11px' }} />
-                                <Bar dataKey="score" fill="#2E3A8C" radius={[4, 4, 0, 0]} name="Your Score" />
-                                <Bar dataKey="avg" fill="#9EA2B8" radius={[4, 4, 0, 0]} name="Class Avg" />
-                            </BarChart>
-                        </ResponsiveContainer>
+                        <h2 className="font-sora font-semibold text-base text-text-primary dark:text-dark-text mb-4">Quiz Performance vs Passing</h2>
+                        {quizAttemptsList.length === 0 ? (
+                            <div className="h-[200px] flex flex-col items-center justify-center text-center p-4">
+                                <BarChart3 size={32} className="text-text-faint opacity-40 mb-2" />
+                                <p className="text-xs text-text-muted">No quiz attempts yet. Complete a quiz to view your performance!</p>
+                            </div>
+                        ) : (
+                            <ResponsiveContainer width="100%" height={200}>
+                                <BarChart data={dynamicQuizScores} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--text-faint)' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 11, fill: 'var(--text-faint)' }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                                    <Tooltip contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', fontSize: '12px' }} />
+                                    <Legend wrapperStyle={{ fontSize: '11px' }} />
+                                    <Bar dataKey="score" fill="#2E3A8C" radius={[4, 4, 0, 0]} name="Your Score" />
+                                    <Bar dataKey="avg" fill="#9EA2B8" radius={[4, 4, 0, 0]} name="Passing Score" />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        )}
                     </div>
 
                     {/* Course completion */}
                     <div className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-5">
                         <h2 className="font-sora font-semibold text-base text-text-primary dark:text-dark-text mb-4">Course Progress</h2>
-                        <div className="space-y-4">
-                            {enrollments.slice(0, 4).map(enr => (
-                                <div key={enr.id}>
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <p className="text-sm font-medium text-text-primary dark:text-dark-text truncate pr-4">{enr.course.title}</p>
-                                        <span className="text-sm font-semibold text-primary flex-shrink-0">
-                                            {enr.completedAt ? '100%' : `${enr.progress}%`}
-                                        </span>
+                        {enrollmentList.length === 0 ? (
+                            <div className="h-[200px] flex flex-col items-center justify-center text-center p-4">
+                                <BookOpen size={32} className="text-text-faint opacity-40 mb-2" />
+                                <p className="text-xs text-text-muted">No enrolled courses yet. Browse catalog to start learning!</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {enrollmentList.slice(0, 4).map(enr => (
+                                    <div key={enr.id || enr._id}>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <p className="text-sm font-medium text-text-primary dark:text-dark-text truncate pr-4">{enr.course?.title || 'Course'}</p>
+                                            <span className="text-sm font-semibold text-primary flex-shrink-0">
+                                                {enr.completedAt ? '100%' : `${enr.progress || 0}%`}
+                                            </span>
+                                        </div>
+                                        <div className="h-2 bg-border dark:bg-dark-border rounded-full overflow-hidden">
+                                            <motion.div
+                                                className={cn('h-full rounded-full', enr.completedAt ? 'bg-success' : 'bg-primary')}
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${enr.completedAt ? 100 : (enr.progress || 0)}%` }}
+                                                transition={{ duration: 0.8, delay: 0.2 }}
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="h-2 bg-border dark:bg-dark-border rounded-full overflow-hidden">
-                                        <motion.div
-                                            className={cn('h-full rounded-full', enr.completedAt ? 'bg-success' : 'bg-primary')}
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${enr.completedAt ? 100 : enr.progress}%` }}
-                                            transition={{ duration: 0.8, delay: 0.2 }}
-                                        />
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* Skill radar */}

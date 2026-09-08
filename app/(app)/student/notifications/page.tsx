@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Bell, BookOpen, Video, Trophy, Megaphone, Star, Settings, X, Check, CheckCheck } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
 import { useAppStore } from '@/store/use-app-store'
+import { markNotificationRead, markAllNotificationsRead, deleteNotification } from '@/lib/api/notifications'
 import { formatRelativeTime, cn } from '@/lib/utils'
 import { NotificationType } from '@/types'
 
@@ -31,6 +32,21 @@ export default function NotificationsPage() {
     const { notifications, markAsRead, markAllAsRead, clearNotification, unreadCount } = useAppStore()
     const [filter, setFilter] = useState('All')
 
+    const handleMarkAllAsRead = () => {
+        markAllAsRead()
+        markAllNotificationsRead().catch(() => {})
+    }
+
+    const handleMarkAsRead = (id: string) => {
+        markAsRead(id)
+        markNotificationRead(id).catch(() => {})
+    }
+
+    const handleDelete = (id: string) => {
+        clearNotification(id)
+        deleteNotification(id).catch(() => {})
+    }
+
     const filtered = notifications.filter(n => {
         if (filter === 'All') return true
         if (filter === 'Unread') return !n.read
@@ -47,7 +63,7 @@ export default function NotificationsPage() {
                     </div>
                     {unreadCount > 0 && (
                         <motion.button
-                            onClick={markAllAsRead}
+                            onClick={handleMarkAllAsRead}
                             className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-primary text-primary hover:bg-primary-tint transition-colors"
                             whileTap={{ scale: 0.97 }}
                         >
@@ -107,11 +123,11 @@ export default function NotificationsPage() {
                                         {/* Actions */}
                                         <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                                             {!notif.read && (
-                                                <button onClick={() => markAsRead(notif.id)} className="p-1 rounded-lg hover:bg-background dark:hover:bg-dark-bg text-text-faint hover:text-success transition-colors" title="Mark as read">
+                                                <button onClick={() => handleMarkAsRead(notif.id)} className="p-1 rounded-lg hover:bg-background dark:hover:bg-dark-bg text-text-faint hover:text-success transition-colors" title="Mark as read">
                                                     <Check size={14} />
                                                 </button>
                                             )}
-                                            <button onClick={() => clearNotification(notif.id)} className="p-1 rounded-lg hover:bg-background dark:hover:bg-dark-bg text-text-faint hover:text-accent transition-colors" title="Dismiss">
+                                            <button onClick={() => handleDelete(notif.id)} className="p-1 rounded-lg hover:bg-background dark:hover:bg-dark-bg text-text-faint hover:text-accent transition-colors" title="Dismiss">
                                                 <X size={14} />
                                             </button>
                                         </div>

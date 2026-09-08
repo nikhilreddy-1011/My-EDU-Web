@@ -9,8 +9,8 @@ import {
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
 import { useAuthStore } from '@/store/use-auth-store'
-import { enrollments as mockEnrollments, liveClasses as fallbackClasses, quizzes, userBadges, studentStats } from '@/data/mock-data'
-import { getMyEnrollments } from '@/lib/api/enrollments'
+import { liveClasses as fallbackClasses, quizzes, userBadges } from '@/data/mock-data'
+import { getStudentDashboard } from '@/lib/api/enrollments'
 import { getLiveClasses } from '@/lib/api/live-classes'
 import { connectSocket } from '@/lib/socket'
 import { getGreeting, formatDate, formatTime } from '@/lib/utils'
@@ -22,11 +22,28 @@ import {
 const container = { hidden: {}, show: { transition: { staggerChildren: 0.07 } } }
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }
 
+const defaultStats = {
+    overallProgress: 0,
+    coursesInProgress: 0,
+    coursesCompleted: 0,
+    totalEnrolled: 0,
+    learningHours: 0,
+    currentStreak: 0,
+    weeklyActivity: [
+        { day: 'Mon', hours: 0 },
+        { day: 'Tue', hours: 0 },
+        { day: 'Wed', hours: 0 },
+        { day: 'Thu', hours: 0 },
+        { day: 'Fri', hours: 0 },
+        { day: 'Sat', hours: 0 },
+        { day: 'Sun', hours: 0 },
+    ],
+}
+
 export default function StudentDashboard() {
     const { user, isAuthenticated } = useAuthStore()
-    const stats = studentStats
-
-    const [enrolledList, setEnrolledList] = React.useState<any[]>(mockEnrollments)
+    const [stats, setStats] = React.useState(defaultStats)
+    const [continueLearningList, setContinueLearningList] = React.useState<any[]>([])
     const [liveList, setLiveList] = React.useState<any[]>(fallbackClasses)
 
     const fetchLiveClassesData = () => {
@@ -80,30 +97,21 @@ export default function StudentDashboard() {
         if (!isAuthenticated) return
 
         let isMounted = true
-        getMyEnrollments()
+        getStudentDashboard()
             .then(res => {
-                if (isMounted && res && res.success && Array.isArray(res.enrollments) && res.enrollments.length > 0) {
-                    const mapped = res.enrollments
-                        .filter((e: any) => e.status !== 'failed' && e.status !== 'pending')
-                        .map((e: any) => ({
-                            id: e._id || e.id,
-                            courseId: e.course?._id || e.courseId || e.course,
-                            progress: e.progress || 0,
-                            completedLessons: e.completedLessons || [],
-                            completedAt: e.completedAt,
-                            course: {
-                                title: e.course?.title || 'Enrolled Course',
-                                thumbnail: e.course?.thumbnail || '',
-                                instructor: {
-                                    name: e.course?.instructor?.name || 'Instructor',
-                                },
-                            },
-                        }))
-                    setEnrolledList(mapped)
+                if (isMounted && res && res.success) {
+                    if (res.stats) {
+                        setStats(res.stats)
+                    }
+                    if (Array.isArray(res.continueLearning)) {
+                        setContinueLearningList(res.continueLearning)
+                    } else if (Array.isArray(res.enrollments)) {
+                        setContinueLearningList(res.enrollments)
+                    }
                 }
             })
             .catch(() => {
-                // Keep mock enrollments as fallback
+                // If unauthenticated or network error, leave at 0 default
             })
 
         return () => {
@@ -111,16 +119,44 @@ export default function StudentDashboard() {
         }
     }, [isAuthenticated])
 
-    const inProgress = enrolledList.filter(e => !e.completedAt).slice(0, 3)
+    const inProgress = continueLearningList.filter(e => !e.completedAt).slice(0, 3)
     const upcoming = liveList.filter(lc => lc.status === 'UPCOMING').slice(0, 3)
     const liveNow = liveList.filter(lc => lc.status === 'LIVE').slice(0, 1)
     const upcomingQuizzes = quizzes.filter(q => q.isPublished).slice(0, 2)
 
     const statCards = [
-        { label: 'Overall Progress', value: `${stats.overallProgress}%`, icon: <TrendingUp size={18} />, color: 'text-primary', bg: 'bg-primary-tint dark:bg-dark-surface2', delta: '+5% this week' },
-        { label: 'In Progress', value: enrolledList.length > 0 ? enrolledList.length : stats.coursesInProgress, icon: <BookOpen size={18} />, color: 'text-warning', bg: 'bg-yellow-50 dark:bg-yellow-900/10', delta: 'Active' },
-        { label: 'Completed', value: stats.coursesCompleted, icon: <Award size={18} />, color: 'text-success', bg: 'bg-green-50 dark:bg-green-900/10', delta: '2 this quarter' },
-        { label: 'Learning Hours', value: `${stats.learningHours}h`, icon: <Clock size={18} />, color: 'text-accent', bg: 'bg-orange-50 dark:bg-orange-900/10', delta: '+3h this week' },
+        {
+            label: 'Overall Progress',
+            value: `${stats.overallProgress}%`,
+            icon: <TrendingUp size={18} />,
+            color: 'text-primary',
+            bg: 'bg-primary-tint dark:bg-dark-surface2',
+            delta: stats.overallProgress > 0 ? `${stats.overallProgress}% completed` : 'Start your journey'
+        },
+        {
+            label: 'In Progress',
+            value: stats.coursesInProgress,
+            icon: <BookOpen size={18} />,
+            color: 'text-warning',
+            bg: 'bg-yellow-50 dark:bg-yellow-900/10',
+            delta: stats.coursesInProgress > 0 ? `${stats.coursesInProgress} active` : 'No active courses'
+        },
+        {
+            label: 'Completed',
+            value: stats.coursesCompleted,
+            icon: <Award size={18} />,
+            color: 'text-success',
+            bg: 'bg-green-50 dark:bg-green-900/10',
+            delta: stats.coursesCompleted > 0 ? `${stats.coursesCompleted} completed` : '0 completed'
+        },
+        {
+            label: 'Learning Hours',
+            value: `${stats.learningHours}h`,
+            icon: <Clock size={18} />,
+            color: 'text-accent',
+            bg: 'bg-orange-50 dark:bg-orange-900/10',
+            delta: stats.learningHours > 0 ? `${stats.learningHours}h logged` : '0h logged'
+        },
     ]
 
     return (
@@ -167,48 +203,63 @@ export default function StudentDashboard() {
                             <Link href="/student/courses" className="text-xs text-primary flex items-center gap-1 hover:underline">View all <ChevronRight size={14} /></Link>
                         </div>
 
-                        {inProgress.map((enr) => (
-                            <Link key={enr.id} href={`/student/courses/${enr.courseId}`}>
-                                <div className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-4 hover:shadow-card hover:-translate-y-0.5 transition-all cursor-pointer group">
-                                    <div className="flex gap-4">
-                                        <div className="w-16 h-16 rounded-xl flex-shrink-0 overflow-hidden bg-dark-surface2 relative">
-                                            {enr.course.thumbnail ? (
-                                                <img
-                                                    src={enr.course.thumbnail}
-                                                    alt={enr.course.title}
-                                                    className="w-full h-full object-cover"
-                                                />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary to-primary-dark">
-                                                    <BookOpen size={24} className="text-white opacity-80" />
+                        {inProgress.length === 0 ? (
+                            <div className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-8 text-center">
+                                <div className="w-12 h-12 rounded-2xl bg-primary-tint dark:bg-dark-surface2 flex items-center justify-center mx-auto mb-3">
+                                    <BookOpen size={24} className="text-primary" />
+                                </div>
+                                <h3 className="font-sora font-semibold text-base text-text-primary dark:text-dark-text mb-1">No courses in progress</h3>
+                                <p className="text-xs text-text-muted mb-4 max-w-sm mx-auto">You have not started any courses yet. Explore our courses catalog and begin your learning journey today!</p>
+                                <Link href="/student/courses">
+                                    <button className="px-5 py-2.5 bg-primary text-white text-xs font-semibold rounded-xl hover:bg-primary-dark transition-colors shadow-sm inline-flex items-center gap-2">
+                                        <BookOpen size={14} /> Explore Courses
+                                    </button>
+                                </Link>
+                            </div>
+                        ) : (
+                            inProgress.map((enr) => (
+                                <Link key={enr.id} href={`/student/courses/${enr.courseId}`}>
+                                    <div className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-4 hover:shadow-card hover:-translate-y-0.5 transition-all cursor-pointer group">
+                                        <div className="flex gap-4">
+                                            <div className="w-16 h-16 rounded-xl flex-shrink-0 overflow-hidden bg-dark-surface2 relative">
+                                                {enr.course.thumbnail ? (
+                                                    <img
+                                                        src={enr.course.thumbnail}
+                                                        alt={enr.course.title}
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary to-primary-dark">
+                                                        <BookOpen size={24} className="text-white opacity-80" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-start justify-between gap-2 mb-1">
+                                                    <h3 className="font-semibold text-sm text-text-primary dark:text-dark-text truncate">{enr.course.title}</h3>
+                                                    <span className="text-xs text-text-faint whitespace-nowrap font-medium">{enr.progress}%</span>
                                                 </div>
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-start justify-between gap-2 mb-1">
-                                                <h3 className="font-semibold text-sm text-text-primary dark:text-dark-text truncate">{enr.course.title}</h3>
-                                                <span className="text-xs text-text-faint whitespace-nowrap font-medium">{enr.progress}%</span>
-                                            </div>
-                                            <p className="text-xs text-text-muted mb-2">{enr.course.instructor.name}</p>
-                                            <div className="w-full h-1.5 bg-border dark:bg-dark-border rounded-full overflow-hidden mb-2">
-                                                <motion.div
-                                                    className="h-full bg-primary rounded-full"
-                                                    initial={{ width: 0 }}
-                                                    animate={{ width: `${enr.progress}%` }}
-                                                    transition={{ duration: 0.8, delay: 0.3 }}
-                                                />
-                                            </div>
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-xs text-text-faint">{enr.completedLessons.length} lessons completed</span>
-                                                <span className="text-xs text-primary font-semibold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Play size={11} /> Continue
-                                                </span>
+                                                <p className="text-xs text-text-muted mb-2">{enr.course.instructor?.name || 'Instructor'}</p>
+                                                <div className="w-full h-1.5 bg-border dark:bg-dark-border rounded-full overflow-hidden mb-2">
+                                                    <motion.div
+                                                        className="h-full bg-primary rounded-full"
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: `${enr.progress}%` }}
+                                                        transition={{ duration: 0.8, delay: 0.3 }}
+                                                    />
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs text-text-faint">{(enr.completedLessons?.length) || 0} lessons completed</span>
+                                                    <span className="text-xs text-primary font-semibold flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <Play size={11} /> Continue
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </Link>
-                        ))}
+                                </Link>
+                            ))
+                        )}
                     </motion.div>
 
                     {/* Weekly Activity Chart */}

@@ -9,11 +9,15 @@ import { useAuthStore } from '@/store/use-auth-store'
 import { useAppStore } from '@/store/use-app-store'
 import { getInitials, cn } from '@/lib/utils'
 import { useTheme } from 'next-themes'
+import { getNotifications } from '@/lib/api/notifications'
 
 export function Topbar({ title }: { title?: string }) {
     const user = useAuthStore(state => state.user)
+    const isAuthenticated = useAuthStore(state => state.isAuthenticated)
     const logout = useAuthStore(state => state.logout)
     const unreadCount = useAppStore(state => state.unreadCount)
+    const setNotifications = useAppStore(state => state.setNotifications)
+    const clearAllNotifications = useAppStore(state => state.clearAllNotifications)
     const { setSearchOpen } = useAppStore()
     const { theme, setTheme } = useTheme()
     const router = useRouter()
@@ -22,10 +26,37 @@ export function Topbar({ title }: { title?: string }) {
 
     React.useEffect(() => { setMounted(true) }, [])
 
+    React.useEffect(() => {
+        if (!isAuthenticated) {
+            clearAllNotifications()
+            return
+        }
+        let isMounted = true
+        getNotifications()
+            .then(res => {
+                if (isMounted && res && res.success && Array.isArray(res.notifications)) {
+                    const mapped = res.notifications.map((n: any) => ({
+                        id: n._id || n.id,
+                        userId: user?.id || '',
+                        type: (n.type ? n.type.toUpperCase() : 'SYSTEM') as any,
+                        title: n.title,
+                        message: n.message,
+                        read: !!n.read,
+                        link: n.link,
+                        createdAt: n.createdAt,
+                    }))
+                    setNotifications(mapped, res.unreadCount)
+                }
+            })
+            .catch(() => {})
+        return () => { isMounted = false }
+    }, [isAuthenticated, user?.id, setNotifications, clearAllNotifications])
+
     const notifHref = user?.role === 'TEACHER' ? '/teacher/notifications' : '/student/notifications'
     const profileHref = user?.role === 'TEACHER' ? '/teacher/profile' : user?.role === 'ADMIN' ? '/admin/profile' : '/student/profile'
 
     const handleLogout = () => {
+        clearAllNotifications()
         logout()
         router.push('/login')
     }

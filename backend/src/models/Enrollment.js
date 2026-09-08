@@ -23,6 +23,10 @@ const enrollmentSchema = new mongoose.Schema(
                 type: String, // lesson _id as string
             },
         ],
+        currentLesson: {
+            type: String, // current/last accessed lesson _id as string
+            default: '',
+        },
         lastAccessedAt: {
             type: Date,
             default: Date.now,

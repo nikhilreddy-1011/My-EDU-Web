@@ -12,7 +12,8 @@ import {
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
 import { modulesForC1, courses } from '@/data/mock-data'
-import { checkCourseAccess } from '@/lib/api/courses'
+import { checkCourseAccess, getCourseById } from '@/lib/api/courses'
+import { getCourseEnrollment, completeLesson } from '@/lib/api/enrollments'
 import { cn, formatPrice } from '@/lib/utils'
 import { toast } from 'sonner'
 
@@ -27,16 +28,22 @@ interface Message { id: string; role: 'user' | 'assistant'; content: string; tim
 
 export default function LessonPage() {
     const { id, lessonId } = useParams<{ id: string; lessonId: string }>()
-    const course = courses.find(c => c.id === id)
-    const allLessons = modulesForC1.flatMap(m => m.lessons)
+    const [course, setCourse] = useState<any>(courses.find(c => c.id === id) || null)
+    const [modules, setModules] = useState<any[]>(modulesForC1)
+    const [enrollment, setEnrollment] = useState<any>(null)
+    const [completedLessons, setCompletedLessons] = useState<string[]>([])
+    const [progress, setProgress] = useState(0)
+    const [isCompleting, setIsCompleting] = useState(false)
+
+    const allLessons = modules.flatMap(m => m.lessons || [])
     const currentLesson = allLessons.find(l => l.id === lessonId) || allLessons[0]
     const currentIndex = allLessons.findIndex(l => l.id === currentLesson?.id)
     const prevLesson = allLessons[currentIndex - 1]
     const nextLesson = allLessons[currentIndex + 1]
+    const isCompleted = currentLesson?.id ? completedLessons.includes(currentLesson.id) : false
 
     const [isPlaying, setIsPlaying] = useState(false)
-    const [progress, setProgress] = useState(35)
-    const [isCompleted, setIsCompleted] = useState(currentLesson?.isCompleted || false)
+    const [videoProgress, setVideoProgress] = useState(30)
     const [isAIOpen, setIsAIOpen] = useState(false)
     const [messages, setMessages] = useState<Message[]>([])
     const [input, setInput] = useState('')
@@ -50,30 +57,73 @@ export default function LessonPage() {
 
     useEffect(() => {
         let isMounted = true
-        const verify = async () => {
+        const verifyAndLoad = async () => {
             if (!id) return
             try {
-                const res = await checkCourseAccess(id)
-                if (isMounted) {
-                    setHasAccess(res.hasAccess)
-                    setCourseDetails(res.course)
+                const [accessRes, courseRes, enrRes] = await Promise.allSettled([
+                    checkCourseAccess(id),
+                    getCourseById(id),
+                    getCourseEnrollment(id),
+                ])
+
+                if (!isMounted) return
+
+                let hasAcc = false
+                if (accessRes.status === 'fulfilled' && accessRes.value?.success) {
+                    hasAcc = accessRes.value.hasAccess
+                    if (accessRes.value.course) setCourseDetails(accessRes.value.course)
                 }
+
+                if (courseRes.status === 'fulfilled' && courseRes.value?.success && courseRes.value.course) {
+                    const c = courseRes.value.course
+                    setCourse(c)
+                    if (Array.isArray(c.modules) && c.modules.length > 0) {
+                        setModules(c.modules)
+                    }
+                }
+
+                if (enrRes.status === 'fulfilled' && enrRes.value?.success && enrRes.value.isEnrolled) {
+                    hasAcc = true
+                    const enr = enrRes.value.enrollment
+                    setEnrollment(enr)
+                    if (enr) {
+                        setCompletedLessons(enr.completedLessons || [])
+                        setProgress(enr.progress || 0)
+                    }
+                }
+
+                setHasAccess(hasAcc)
             } catch (err) {
-                // If checking fails or unauthenticated
-                if (isMounted) {
-                    setHasAccess(false)
-                }
+                if (isMounted) setHasAccess(false)
             } finally {
                 if (isMounted) setIsCheckingAccess(false)
             }
         }
-        verify()
+        verifyAndLoad()
         return () => { isMounted = false }
     }, [id])
 
-    const markComplete = () => {
-        setIsCompleted(true)
-        toast.success('Lesson marked as complete! ✅')
+    const markComplete = async () => {
+        if (!id || !currentLesson?.id || isCompleting) return
+        setIsCompleting(true)
+        try {
+            const res = await completeLesson(id, currentLesson.id)
+            if (res && res.success) {
+                setCompletedLessons(prev => Array.from(new Set([...prev, currentLesson.id])))
+                if (typeof res.progress === 'number') {
+                    setProgress(res.progress)
+                }
+                toast.success(res.isCompleted ? '🎉 Congratulations! You completed the course!' : 'Lesson marked as complete! ✅')
+            } else {
+                setCompletedLessons(prev => Array.from(new Set([...prev, currentLesson.id])))
+                toast.success('Lesson marked as complete! ✅')
+            }
+        } catch (err: any) {
+            setCompletedLessons(prev => Array.from(new Set([...prev, currentLesson.id])))
+            toast.success('Lesson marked as complete! ✅')
+        } finally {
+            setIsCompleting(false)
+        }
     }
 
     const sendMessage = async (text?: string) => {
@@ -158,10 +208,12 @@ export default function LessonPage() {
                 <div className="hidden lg:flex w-72 flex-shrink-0 bg-surface dark:bg-dark-surface border-r border-border dark:border-dark-border flex-col overflow-y-auto">
                     <div className="p-4 border-b border-border dark:border-dark-border">
                         <h2 className="font-sora font-semibold text-sm text-text-primary dark:text-dark-text">Course Content</h2>
-                        <p className="text-xs text-text-muted mt-0.5">{allLessons.filter(l => l.isCompleted).length} / {allLessons.length} completed</p>
+                        <p className="text-xs text-text-muted mt-0.5">
+                            {allLessons.filter(l => completedLessons.includes(l.id)).length} / {allLessons.length} completed ({progress}%)
+                        </p>
                     </div>
-                    {modulesForC1.map(mod => (
-                        <div key={mod.id}>
+                    {modules.map(mod => (
+                        <div key={mod.id || mod._id}>
                             <button
                                 onClick={() => setExpandedMods(prev => { const n = new Set(prev); n.has(mod.id) ? n.delete(mod.id) : n.add(mod.id); return n })}
                                 className="w-full flex items-center justify-between px-4 py-3 hover:bg-background dark:hover:bg-dark-bg transition-colors text-left"
@@ -169,19 +221,22 @@ export default function LessonPage() {
                                 <span className="text-xs font-semibold text-text-primary dark:text-dark-text">{mod.title}</span>
                                 <ChevronRight size={14} className={cn('text-text-faint transition-transform', expandedMods.has(mod.id) && 'rotate-90')} />
                             </button>
-                            {expandedMods.has(mod.id) && mod.lessons.map(lesson => (
-                                <Link key={lesson.id} href={lesson.isLocked ? '#' : `/student/courses/${id}/lessons/${lesson.id}`}>
-                                    <div className={cn(
-                                        'flex items-center gap-2 px-4 py-2.5 text-xs transition-colors border-l-2',
-                                        lesson.id === currentLesson?.id ? 'bg-primary-tint dark:bg-dark-surface2 border-primary' : 'border-transparent hover:bg-background dark:hover:bg-dark-bg',
-                                        lesson.isLocked && 'opacity-50 cursor-not-allowed'
-                                    )}>
-                                        {lesson.isCompleted ? <CheckCircle2 size={13} className="text-success flex-shrink-0" /> : lesson.isLocked ? <Lock size={13} className="text-text-faint flex-shrink-0" /> : <Play size={13} className="text-text-faint flex-shrink-0" />}
-                                        <span className={cn('flex-1 truncate', lesson.id === currentLesson?.id && 'text-primary font-medium', !lesson.id && 'text-text-muted')}>{lesson.title}</span>
-                                        <span className="text-text-faint ml-1">{lesson.duration}</span>
-                                    </div>
-                                </Link>
-                            ))}
+                            {expandedMods.has(mod.id) && mod.lessons?.map((lesson: any) => {
+                                const isLessonDone = completedLessons.includes(lesson.id)
+                                return (
+                                    <Link key={lesson.id} href={lesson.isLocked ? '#' : `/student/courses/${id}/lessons/${lesson.id}`}>
+                                        <div className={cn(
+                                            'flex items-center gap-2 px-4 py-2.5 text-xs transition-colors border-l-2',
+                                            lesson.id === currentLesson?.id ? 'bg-primary-tint dark:bg-dark-surface2 border-primary' : 'border-transparent hover:bg-background dark:hover:bg-dark-bg',
+                                            lesson.isLocked && 'opacity-50 cursor-not-allowed'
+                                        )}>
+                                            {isLessonDone ? <CheckCircle2 size={13} className="text-success flex-shrink-0" /> : lesson.isLocked ? <Lock size={13} className="text-text-faint flex-shrink-0" /> : <Play size={13} className="text-text-faint flex-shrink-0" />}
+                                            <span className={cn('flex-1 truncate', lesson.id === currentLesson?.id && 'text-primary font-medium', !lesson.id && 'text-text-muted')}>{lesson.title}</span>
+                                            <span className="text-text-faint ml-1">{lesson.duration}</span>
+                                        </div>
+                                    </Link>
+                                )
+                            })}
                         </div>
                     ))}
                 </div>
@@ -200,9 +255,9 @@ export default function LessonPage() {
                         <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
                             <div className="w-full h-1 bg-white/20 rounded-full mb-3 cursor-pointer" onClick={(e) => {
                                 const rect = e.currentTarget.getBoundingClientRect()
-                                setProgress(Math.round((e.clientX - rect.left) / rect.width * 100))
+                                setVideoProgress(Math.round((e.clientX - rect.left) / rect.width * 100))
                             }}>
-                                <div className="h-full bg-white rounded-full relative" style={{ width: `${progress}%` }}>
+                                <div className="h-full bg-white rounded-full relative" style={{ width: `${videoProgress}%` }}>
                                     <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow" />
                                 </div>
                             </div>

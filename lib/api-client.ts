@@ -100,12 +100,12 @@ export const apiClient = async <T = unknown>(
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Network error';
         if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('fetch failed')) {
-            const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+            const isLocal = cleanBaseUrl.includes('localhost') || cleanBaseUrl.includes('127.0.0.1');
             const hint = isLocal
                 ? 'Please make sure the backend server is running on port 5000.'
                 : 'Please verify the backend server on Render is awake and healthy.';
             throw new ApiError(
-                `Unable to connect to the backend server at ${baseUrl}. ${hint}`,
+                `Unable to connect to the backend server at ${cleanBaseUrl}. ${hint}`,
                 0
             );
         }

@@ -10,7 +10,7 @@ import {
     Play, Mic, Layers, Radio
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { liveClasses as fallbackClasses, mockLectures, mockNotes, courses as fallbackCourses, Lecture, ClassNote } from '@/data/mock-data'
+import { mockLectures, mockNotes, Lecture, ClassNote } from '@/data/mock-data'
 import { formatDate, formatTime, formatDuration, cn } from '@/lib/utils'
 import { getLiveClasses, scheduleLiveClass, updateLiveClassStatus, deleteLiveClass, LiveClassItem } from '@/lib/api/live-classes'
 import { getCourses } from '@/lib/api/courses'
@@ -66,8 +66,8 @@ export default function TeacherLiveClassesPage() {
     const [noteFile, setNoteFile] = useState<File | null>(null)
 
     // Local lists
-    const [classesList, setClassesList] = useState<any[]>(fallbackClasses)
-    const [availableCourses, setAvailableCourses] = useState<any[]>(fallbackCourses)
+    const [classesList, setClassesList] = useState<any[]>([])
+    const [availableCourses, setAvailableCourses] = useState<any[]>([])
     const [isLoadingClasses, setIsLoadingClasses] = useState(true)
 
     const [lectures, setLectures] = useState<Lecture[]>(mockLectures.filter(l => l.instructorId === 't1'))
@@ -80,7 +80,7 @@ export default function TeacherLiveClassesPage() {
         setIsLoadingClasses(true)
         try {
             const res = await getLiveClasses()
-            if (res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+            if (res.success && Array.isArray(res.classes)) {
                 const mapped = res.classes.map(c => ({
                     id: c.meetingId || c._id,
                     meetingId: c.meetingId || c._id,
@@ -88,11 +88,11 @@ export default function TeacherLiveClassesPage() {
                     title: c.title,
                     description: c.description,
                     course: {
-                        id: c.course?._id || 'c1',
+                        id: c.course?._id || '',
                         title: c.courseTitle || c.course?.title || 'General Session',
                         category: c.course?.category || 'Live Workshop',
                     },
-                    instructorId: typeof c.instructor === 'string' ? c.instructor : (c.instructor?._id || 't1'),
+                    instructorId: typeof c.instructor === 'string' ? c.instructor : (c.instructor?._id || ''),
                     instructor: {
                         name: c.instructorName || (typeof c.instructor === 'object' ? c.instructor?.name : 'Instructor'),
                         avatar: c.instructorAvatar || (typeof c.instructor === 'object' ? c.instructor?.avatar : ''),
@@ -103,10 +103,12 @@ export default function TeacherLiveClassesPage() {
                     status: c.status,
                     attendees: c.attendeesCount || 0,
                     maxAttendees: c.maxSeats || 500,
-                    meetingUrl: c.meetingUrl || `https://learnsphere.io/live/${c.meetingId || c._id}`,
+                    meetingUrl: c.meetingUrl || `/student/live-classes/${c.meetingId || c._id}`,
                     tags: c.tags || [],
                 }))
                 setClassesList(mapped)
+            } else {
+                setClassesList([])
             }
         } catch (err) {
             console.error('Failed to load live classes from API:', err)

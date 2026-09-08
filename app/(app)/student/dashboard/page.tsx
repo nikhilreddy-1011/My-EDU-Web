@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
 import { useAuthStore } from '@/store/use-auth-store'
-import { liveClasses as fallbackClasses, quizzes, userBadges } from '@/data/mock-data'
+import { quizzes, userBadges } from '@/data/mock-data'
 import { getStudentDashboard } from '@/lib/api/enrollments'
 import { getLiveClasses } from '@/lib/api/live-classes'
 import { connectSocket } from '@/lib/socket'
@@ -44,12 +44,12 @@ export default function StudentDashboard() {
     const { user, isAuthenticated } = useAuthStore()
     const [stats, setStats] = React.useState(defaultStats)
     const [continueLearningList, setContinueLearningList] = React.useState<any[]>([])
-    const [liveList, setLiveList] = React.useState<any[]>(fallbackClasses)
+    const [liveList, setLiveList] = React.useState<any[]>([])
 
     const fetchLiveClassesData = () => {
         getLiveClasses()
             .then(res => {
-                if (res && res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+                if (res && res.success && Array.isArray(res.classes)) {
                     const mapped = res.classes.map(c => ({
                         id: c.meetingId || c._id,
                         meetingId: c.meetingId || c._id,
@@ -66,9 +66,11 @@ export default function StudentDashboard() {
                         attendees: c.attendeesCount || 0,
                     }))
                     setLiveList(mapped)
+                } else {
+                    setLiveList([])
                 }
             })
-            .catch(() => {})
+            .catch(() => { setLiveList([]) })
     }
 
     React.useEffect(() => {
@@ -299,6 +301,12 @@ export default function StudentDashboard() {
                             <h2 className="font-sora font-semibold text-base text-text-primary dark:text-dark-text">Live Classes</h2>
                             <Link href="/student/live-classes" className="text-xs text-primary hover:underline flex items-center gap-1">View all <ChevronRight size={14} /></Link>
                         </div>
+
+                        {liveNow.length === 0 && upcoming.length === 0 && (
+                            <div className="text-center py-6 text-text-muted text-xs">
+                                No scheduled live classes right now.
+                            </div>
+                        )}
 
                         {liveNow.map(lc => (
                             <div key={lc.id} className="mb-3 p-3 rounded-xl border-2 border-accent/30 bg-accent/5">

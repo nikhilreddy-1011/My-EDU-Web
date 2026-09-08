@@ -4,83 +4,11 @@ const Enrollment = require('../models/Enrollment');
 const Notification = require('../models/Notification');
 const { getIO } = require('../socket');
 
-// Helper to seed initial sample classes if empty
-const seedDefaultClassesIfEmpty = async () => {
-    try {
-        const count = await LiveClass.countDocuments();
-        if (count === 0) {
-            const User = require('../models/User');
-            const teacher = await User.findOne({ role: 'TEACHER' });
-            const teacherId = teacher ? teacher._id : null;
-            const teacherName = teacher ? teacher.name : 'Dr. Sarah Mitchell';
-            const teacherAvatar = teacher ? teacher.avatar : 'https://api.dicebear.com/7.x/avataaars/svg?seed=sarah';
-
-            const now = Date.now();
-            const defaultClasses = [
-                {
-                    title: 'Advanced React Patterns & Micro-Frontends Architecture',
-                    description: 'Deep dive into concurrent mode, Server Components, and real-world micro-frontend orchestration.',
-                    courseTitle: 'Full-Stack Web Development Bootcamp',
-                    instructor: teacherId || '6a9e82d2f12fd2a46e309234',
-                    instructorName: teacherName,
-                    instructorAvatar: teacherAvatar,
-                    scheduledAt: new Date(now - 15 * 60 * 1000), // started 15 min ago -> LIVE NOW
-                    duration: 90,
-                    status: 'LIVE',
-                    attendeesCount: 42,
-                    maxSeats: 500,
-                    platform: 'in-app',
-                    meetingId: 'lc_live_now_1',
-                    tags: ['React', 'Architecture', 'Next.js'],
-                },
-                {
-                    title: 'Interactive System Design: High-Scale Distributed Cache',
-                    description: 'Designing a Redis/Memcached cluster handling 500k RPS with write-through consistency.',
-                    courseTitle: 'System Design & Distributed Systems',
-                    instructor: teacherId || '6a9e82d2f12fd2a46e309234',
-                    instructorName: teacherName,
-                    instructorAvatar: teacherAvatar,
-                    scheduledAt: new Date(now + 2 * 3600 * 1000), // in 2 hours
-                    duration: 60,
-                    status: 'UPCOMING',
-                    attendeesCount: 0,
-                    maxSeats: 300,
-                    platform: 'in-app',
-                    meetingId: 'lc_upcoming_1',
-                    tags: ['System Design', 'Backend', 'Redis'],
-                },
-                {
-                    title: 'Figma Auto-Layout & Design Tokens to Production CSS',
-                    description: 'Bridge the gap between design tokens and production React styling with Tailwind & Vanilla CSS.',
-                    courseTitle: 'UI/UX Design Masterclass: From Figma to Code',
-                    instructor: teacherId || '6a9e82d2f12fd2a46e309234',
-                    instructorName: teacherName,
-                    instructorAvatar: teacherAvatar,
-                    scheduledAt: new Date(now + 24 * 3600 * 1000), // tomorrow
-                    duration: 75,
-                    status: 'UPCOMING',
-                    attendeesCount: 0,
-                    maxSeats: 500,
-                    platform: 'in-app',
-                    meetingId: 'lc_upcoming_2',
-                    tags: ['UI/UX', 'Figma', 'CSS'],
-                },
-            ];
-
-            await LiveClass.insertMany(defaultClasses);
-        }
-    } catch (err) {
-        console.error('Failed to seed default live classes:', err.message);
-    }
-};
-
 // @desc   Get all live classes (live, upcoming, completed)
 // @route  GET /api/v1/live-classes
 // @access Public / Private
 const getLiveClasses = async (req, res, next) => {
     try {
-        await seedDefaultClassesIfEmpty();
-
         const { status, courseId, instructorId } = req.query;
         const filter = {};
 
@@ -116,6 +44,10 @@ const getLiveClasses = async (req, res, next) => {
 // @access Private (TEACHER, ADMIN)
 const scheduleLiveClass = async (req, res, next) => {
     try {
+        if (!req.user || (req.user.role !== 'TEACHER' && req.user.role !== 'ADMIN')) {
+            return res.status(403).json({ success: false, message: 'Only teachers can schedule live classes' });
+        }
+
         const {
             title,
             description,
@@ -128,7 +60,7 @@ const scheduleLiveClass = async (req, res, next) => {
             tags,
         } = req.body;
 
-        if (!title) {
+        if (!title || !title.trim()) {
             return res.status(400).json({ success: false, message: 'Class title is required' });
         }
 
@@ -144,6 +76,17 @@ const scheduleLiveClass = async (req, res, next) => {
             try {
                 matchedCourse = await Course.findById(courseId);
                 if (matchedCourse) {
+                    // Verify course ownership
+                    if (
+                        matchedCourse.instructor &&
+                        matchedCourse.instructor.toString() !== req.user._id.toString() &&
+                        req.user.role !== 'ADMIN'
+                    ) {
+                        return res.status(403).json({
+                            success: false,
+                            message: 'You can only schedule live classes for courses you instruct',
+                        });
+                    }
                     courseTitle = matchedCourse.title;
                 }
             } catch {

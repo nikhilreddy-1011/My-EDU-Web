@@ -8,7 +8,6 @@ import {
     Download, Play, Bell, Search, Filter, Eye, BookOpen, Tag, Star
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { liveClasses as fallbackClasses } from '@/data/mock-data'
 import { mockLectures, mockNotes } from '@/data/mock-data'
 import { formatDate, formatTime, formatDuration, cn } from '@/lib/utils'
 import { getLiveClasses } from '@/lib/api/live-classes'
@@ -49,18 +48,18 @@ function CountdownUnit({ val, label }: { val: number; label: string }) {
 
 export default function StudentLiveClassesPage() {
     const [mainTab, setMainTab] = useState<MainTab>('Live Classes')
-    const [classTab, setClassTab] = useState<ClassTab>('Live Now')
+    const [classTab, setClassTab] = useState<ClassTab>('Upcoming')
     const [searchQuery, setSearchQuery] = useState('')
     const [reminders, setReminders] = useState<Set<string>>(new Set())
 
-    const [classesList, setClassesList] = useState<any[]>(fallbackClasses)
+    const [classesList, setClassesList] = useState<any[]>([])
     const [isLoading, setIsLoading] = useState(false)
 
     const fetchLiveClassesData = async () => {
         setIsLoading(true)
         try {
             const res = await getLiveClasses()
-            if (res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+            if (res.success && Array.isArray(res.classes)) {
                 const mapped = res.classes.map(c => ({
                     id: c.meetingId || c._id,
                     meetingId: c.meetingId || c._id,
@@ -68,15 +67,15 @@ export default function StudentLiveClassesPage() {
                     title: c.title,
                     description: c.description,
                     course: {
-                        id: c.course?._id || 'c1',
+                        id: c.course?._id || '',
                         title: c.courseTitle || c.course?.title || 'Live Session',
                         category: c.course?.category || 'Workshop',
                     },
-                    instructorId: typeof c.instructor === 'string' ? c.instructor : (c.instructor?._id || 't1'),
+                    instructorId: typeof c.instructor === 'string' ? c.instructor : (c.instructor?._id || ''),
                     instructor: {
                         name: c.instructorName || (typeof c.instructor === 'object' ? c.instructor?.name : 'Instructor'),
                         avatar: c.instructorAvatar || (typeof c.instructor === 'object' ? c.instructor?.avatar : ''),
-                        title: 'Lead Instructor',
+                        title: 'Instructor',
                     },
                     date: c.scheduledAt,
                     duration: c.duration || 60,
@@ -87,6 +86,8 @@ export default function StudentLiveClassesPage() {
                     tags: c.tags || [],
                 }))
                 setClassesList(mapped)
+            } else {
+                setClassesList([])
             }
         } catch (err) {
             console.error('Failed to load live classes:', err)

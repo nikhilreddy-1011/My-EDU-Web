@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Users, BookOpen, TrendingUp, Star, Plus, Video, FileQuestion, BarChart3, ArrowRight, ChevronRight } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { teacherStats, courses, liveClasses as fallbackClasses, quizAttempts, students } from '@/data/mock-data'
+import { teacherStats, courses, quizAttempts, students } from '@/data/mock-data'
 import { getLiveClasses } from '@/lib/api/live-classes'
 import { connectSocket } from '@/lib/socket'
 import { formatNumber, formatDate, formatTime, cn } from '@/lib/utils'
@@ -19,14 +19,12 @@ const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }
 export default function TeacherDashboard() {
     const stats = teacherStats
     const teacherCourses = courses.filter(c => c.instructorId === 't1' && c.status === 'PUBLISHED')
-    const [upcoming, setUpcoming] = React.useState<any[]>(
-        fallbackClasses.filter(lc => lc.status === 'UPCOMING').slice(0, 3)
-    )
+    const [upcoming, setUpcoming] = React.useState<any[]>([])
 
     const fetchTeacherClasses = () => {
         getLiveClasses()
             .then(res => {
-                if (res && res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+                if (res && res.success && Array.isArray(res.classes)) {
                     const mapped = res.classes
                         .filter(c => c.status === 'UPCOMING')
                         .slice(0, 4)
@@ -40,9 +38,11 @@ export default function TeacherDashboard() {
                             attendees: c.attendeesCount || 0,
                         }))
                     setUpcoming(mapped)
+                } else {
+                    setUpcoming([])
                 }
             })
-            .catch(() => {})
+            .catch(() => { setUpcoming([]) })
     }
 
     React.useEffect(() => {
@@ -187,6 +187,11 @@ export default function TeacherDashboard() {
                             <h2 className="font-sora font-semibold text-base text-text-primary dark:text-dark-text">Upcoming Classes</h2>
                             <Link href="/teacher/live-classes" className="text-xs text-primary hover:underline">Manage</Link>
                         </div>
+                        {upcoming.length === 0 && (
+                            <div className="text-center py-6 text-text-muted text-xs">
+                                No upcoming classes scheduled.
+                            </div>
+                        )}
                         {upcoming.map(lc => (
                             <div key={lc.id} className="flex items-center gap-3 py-3 border-b border-border dark:border-dark-border last:border-0">
                                 <div className="w-10 h-10 rounded-xl bg-primary-tint dark:bg-dark-surface2 flex items-center justify-center flex-shrink-0">

@@ -118,7 +118,7 @@ export default function LiveMeetingPage() {
                         title: lc.title,
                         description: lc.description,
                         course: {
-                            id: lc.course?._id || 'c1',
+                            id: lc.course?._id || '',
                             title: lc.courseTitle || lc.course?.title || 'Live Session',
                             category: lc.course?.category || 'Workshop',
                         },

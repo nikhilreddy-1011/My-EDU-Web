@@ -707,84 +707,9 @@ export const quizAttempts: QuizAttempt[] = [
 ]
 
 // ============================================================
-// LIVE CLASSES
+// LIVE CLASSES (Real live classes are fetched from MongoDB)
 // ============================================================
-export const liveClasses: LiveClass[] = [
-    {
-        id: 'lc1',
-        courseId: 'c1',
-        instructorId: 't1',
-        instructor: teachers[0],
-        course: courses[0],
-        title: 'Live Coding: Building a Full-Stack App with Next.js',
-        description: 'We will build a complete app from scratch.',
-        date: '2026-09-06T14:00:00Z',
-        duration: 90,
-        meetingUrl: 'https://meet.learnsphere.com/lc1',
-        status: 'UPCOMING',
-        attendees: 342,
-        maxAttendees: 500,
-    },
-    {
-        id: 'lc2',
-        courseId: 'c2',
-        instructorId: 't2',
-        instructor: teachers[1],
-        course: courses[1],
-        title: 'Design Critique & Feedback Session',
-        description: 'Share your designs and get expert feedback.',
-        date: '2026-09-05T11:00:00Z',
-        duration: 60,
-        meetingUrl: 'https://meet.learnsphere.com/lc2',
-        status: 'LIVE',
-        attendees: 187,
-        maxAttendees: 300,
-    },
-    {
-        id: 'lc3',
-        courseId: 'c3',
-        instructorId: 't3',
-        instructor: teachers[2],
-        course: courses[2],
-        title: 'Machine Learning Q&A Marathon',
-        description: 'Open Q&A session on all ML topics.',
-        date: '2026-09-08T16:00:00Z',
-        duration: 120,
-        meetingUrl: 'https://meet.learnsphere.com/lc3',
-        status: 'UPCOMING',
-        attendees: 521,
-        maxAttendees: 600,
-    },
-    {
-        id: 'lc4',
-        courseId: 'c1',
-        instructorId: 't1',
-        instructor: teachers[0],
-        course: courses[0],
-        title: 'React Performance Optimization Techniques',
-        description: 'Deep dive into React performance best practices.',
-        date: '2026-08-28T14:00:00Z',
-        duration: 75,
-        meetingUrl: 'https://meet.learnsphere.com/lc4',
-        status: 'COMPLETED',
-        attendees: 412,
-    },
-    {
-        id: 'lc5',
-        courseId: 'c3',
-        instructorId: 't3',
-        instructor: teachers[2],
-        course: courses[2],
-        title: 'Introduction to Neural Networks',
-        description: 'Beginner-friendly intro to how neural networks work.',
-        date: '2026-09-12T10:00:00Z',
-        duration: 90,
-        meetingUrl: 'https://meet.learnsphere.com/lc5',
-        status: 'UPCOMING',
-        attendees: 289,
-        maxAttendees: 400,
-    },
-]
+export const liveClasses: LiveClass[] = []
 
 // ============================================================
 // LECTURES (uploaded video recordings / lecture files)

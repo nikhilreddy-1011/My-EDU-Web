@@ -43,8 +43,8 @@ app.use(
             // Allow requests with no origin (mobile apps, curl, server-to-server)
             if (!origin) return callback(null, true);
 
-            // Allow any localhost or 127.0.0.1 on any port
-            if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+            // Allow any localhost, 127.0.0.1, or local LAN IP (192.168.x.x, 172.x.x.x, 10.x.x.x) on any port
+            if (/^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|172\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin)) {
                 return callback(null, true);
             }
 

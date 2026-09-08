@@ -1,11 +1,12 @@
 import { io, Socket } from 'socket.io-client';
+import { getBaseUrl } from './api-client';
 
 let socket: Socket | null = null;
 
 export const getSocket = (): Socket => {
     if (!socket) {
         const token = typeof window !== 'undefined' ? (localStorage.getItem('ls_token') || '') : '';
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+        const apiUrl = getBaseUrl();
 
         socket = io(apiUrl, {
             auth: {

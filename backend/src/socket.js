@@ -11,7 +11,7 @@ const initSocket = (server) => {
             origin: (origin, callback) => {
                 if (!origin) return callback(null, true);
                 if (
-                    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+                    /^https?:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|172\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin) ||
                     /^https:\/\/([a-zA-Z0-9_-]+\.)*vercel\.app$/.test(origin) ||
                     origin === process.env.FRONTEND_URL
                 ) {

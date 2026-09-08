@@ -1,4 +1,22 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+export const getBaseUrl = (): string => {
+    // If running in browser and accessed through LAN IP or custom domain (e.g., on mobile)
+    if (typeof window !== 'undefined') {
+        const hostname = window.location.hostname;
+        // If accessed via LAN IP or hostname (not localhost or 127.0.0.1)
+        if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
+            const envUrl = process.env.NEXT_PUBLIC_API_URL;
+            // If configured with an explicit production domain (not pointing to localhost)
+            if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+                return envUrl;
+            }
+            // Automatically use the same host IP as the browser with backend port 5000
+            const protocol = window.location.protocol;
+            return `${protocol}//${hostname}:5000`;
+        }
+    }
+
+    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+};
 
 type RequestOptions = {
     method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -66,14 +84,15 @@ export const apiClient = async <T = unknown>(
         config.body = JSON.stringify(body);
     }
 
+    const baseUrl = getBaseUrl();
     let response: Response;
     try {
-        response = await fetch(`${BASE_URL}${endpoint}`, config);
+        response = await fetch(`${baseUrl}${endpoint}`, config);
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Network error';
         if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('fetch failed')) {
             throw new ApiError(
-                `Unable to connect to the backend server at ${BASE_URL}. Please make sure the backend server is running on port 5000.`,
+                `Unable to connect to the backend server at ${baseUrl}. Please make sure the backend server is running on port 5000.`,
                 0
             );
         }

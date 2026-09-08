@@ -21,7 +21,10 @@ import {
     TrackPublication,
     VideoTrack,
     AudioTrack,
+    RemoteAudioTrack,
+    LocalVideoTrack,
     ParticipantEvent,
+    ConnectionState,
 } from 'livekit-client'
 import { getLiveClassById, checkLiveClassAccess, getLiveKitToken } from '@/lib/api/live-classes'
 import { useAuthStore } from '@/store/use-auth-store'
@@ -96,6 +99,15 @@ export default function LiveMeetingPage() {
     const [liveKitConnectionState, setLiveKitConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle')
     const [liveKitError, setLiveKitError] = useState<string | null>(null)
     const roomRef = useRef<Room | null>(null)
+    const connectedMeetingIdRef = useRef<string | null>(null)
+
+    // Independent Media Loading States (Prevents UI Freezing & Race Conditions)
+    const [isCameraLoading, setIsCameraLoading] = useState(false)
+    const [isMicLoading, setIsMicLoading] = useState(false)
+    const [isScreenShareLoading, setIsScreenShareLoading] = useState(false)
+    const cameraLockRef = useRef(false)
+    const micLockRef = useRef(false)
+    const screenShareLockRef = useRef(false)
 
     // Local Media Controls (Driven by LiveKit WebRTC)
     const [isCameraOn, setIsCameraOn] = useState(false)
@@ -104,6 +116,10 @@ export default function LiveMeetingPage() {
     const [isHandRaised, setIsHandRaised] = useState(false)
     const [layout, setLayout] = useState<'grid' | 'spotlight'>('grid')
     const [showDeviceSettings, setShowDeviceSettings] = useState(false)
+
+    // Audio Autoplay Policy Fallback State
+    const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false)
+    const remoteAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map())
 
     // Audio / Video Device Selection
     const [devices, setDevices] = useState<{ videoInputs: MediaDeviceInfo[]; audioInputs: MediaDeviceInfo[] }>({
@@ -150,7 +166,9 @@ export default function LiveMeetingPage() {
                 videoInputs: all.filter(d => d.kind === 'videoinput'),
                 audioInputs: all.filter(d => d.kind === 'audioinput'),
             })
-        } catch {}
+        } catch (err) {
+            console.warn('[LiveKit] Device enumeration error:', err)
+        }
     }, [])
 
     useEffect(() => {
@@ -353,19 +371,138 @@ export default function LiveMeetingPage() {
         }
     }
 
+    // ── Persistent Remote Audio Track Attachment & Playback Manager ────
+    const attachRemoteAudioTrack = useCallback((
+        track: RemoteAudioTrack,
+        publication: TrackPublication | undefined,
+        participant: Participant
+    ) => {
+        if (typeof document === 'undefined') return
+        const trackSid = track.sid || publication?.trackSid || `${participant.identity}-audio`
+        console.log(`[LiveKit] Subscribing remote audio track: ${trackSid} from participant: ${participant.identity} (${participant.name})`)
+
+        let audioEl = remoteAudioElementsRef.current.get(trackSid)
+        if (!audioEl) {
+            audioEl = document.createElement('audio')
+            audioEl.id = `remote-audio-${trackSid}`
+            audioEl.autoplay = true
+            // @ts-ignore
+            audioEl.playsInline = true
+            audioEl.muted = false
+            audioEl.volume = 1.0
+
+            let container = document.getElementById('livekit-remote-audio-container')
+            if (!container) {
+                container = document.createElement('div')
+                container.id = 'livekit-remote-audio-container'
+                container.setAttribute('aria-hidden', 'true')
+                container.style.position = 'fixed'
+                container.style.top = '-9999px'
+                container.style.left = '-9999px'
+                container.style.width = '1px'
+                container.style.height = '1px'
+                container.style.overflow = 'hidden'
+                container.style.opacity = '0.01'
+                container.style.pointerEvents = 'none'
+                document.body.appendChild(container)
+            }
+            container.appendChild(audioEl)
+            remoteAudioElementsRef.current.set(trackSid, audioEl)
+        }
+
+        // Attach LiveKit track to persistent DOM element
+        track.attach(audioEl)
+        console.log(`[LiveKit] Remote audio track ${trackSid} attached to DOM element successfully`)
+
+        // Explicitly trigger playback and handle browser autoplay restrictions
+        const playPromise = audioEl.play()
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    console.log(`[LiveKit] Remote audio playback active for participant: ${participant.identity}`)
+                    setNeedsAudioUnlock(false)
+                })
+                .catch((playErr: any) => {
+                    console.warn(`[LiveKit] Remote audio play() blocked for ${participant.identity}:`, playErr?.name, playErr?.message)
+                    if (playErr?.name === 'NotAllowedError') {
+                        setNeedsAudioUnlock(true)
+                    }
+                })
+        }
+    }, [])
+
+    const detachRemoteAudioTrack = useCallback((
+        track: RemoteAudioTrack | Track,
+        publication: TrackPublication | undefined,
+        participant: Participant
+    ) => {
+        const trackSid = track.sid || publication?.trackSid || `${participant.identity}-audio`
+        console.log(`[LiveKit] Detaching remote audio track ${trackSid} for participant ${participant.identity}`)
+        const audioEl = remoteAudioElementsRef.current.get(trackSid)
+        if (audioEl) {
+            track.detach(audioEl)
+            audioEl.pause()
+            audioEl.srcObject = null
+            audioEl.remove()
+            remoteAudioElementsRef.current.delete(trackSid)
+            console.log(`[LiveKit] Remote audio element ${trackSid} removed cleanly`)
+        }
+    }, [])
+
+    // User gesture unlock for audio (when browser autoplay policy blocks WebRTC audio)
+    const handleUnlockAudio = useCallback(async () => {
+        console.log('[LiveKit] User triggered audio playback unlock')
+        if (roomRef.current) {
+            try {
+                await roomRef.current.startAudio()
+                console.log('[LiveKit] room.startAudio() succeeded')
+            } catch (err) {
+                console.warn('[LiveKit] room.startAudio() error:', err)
+            }
+        }
+        remoteAudioElementsRef.current.forEach((audioEl, sid) => {
+            audioEl.play().then(() => {
+                console.log(`[LiveKit] Audio element ${sid} resumed successfully`)
+            }).catch(err => {
+                console.warn(`[LiveKit] Audio element ${sid} resume retry notice:`, err)
+            })
+        })
+        setNeedsAudioUnlock(false)
+        toast.success('Audio playback enabled 🔊')
+    }, [])
+
+    // Auto-unlock on any user interaction if audio was blocked
+    useEffect(() => {
+        if (!needsAudioUnlock) return
+        const onGlobalClick = () => {
+            handleUnlockAudio()
+        }
+        window.addEventListener('click', onGlobalClick, { once: true })
+        return () => {
+            window.removeEventListener('click', onGlobalClick)
+        }
+    }, [needsAudioUnlock, handleUnlockAudio])
+
     // ── LiveKit Real WebRTC Room Connection ───────────────────────
     useEffect(() => {
         if (isAuthorized !== true || admissionStatus !== 'admitted' || !id || !user) {
             return
         }
 
+        // Prevent duplicate connection attempts to the same meeting
+        if (connectedMeetingIdRef.current === id && roomRef.current) {
+            return
+        }
+
         let isCancelled = false
+        connectedMeetingIdRef.current = id
 
         const connectToLiveKit = async () => {
             setLiveKitConnectionState('connecting')
             setLiveKitError(null)
 
             try {
+                console.log(`[LiveKit] Fetching token for live class: ${id}`)
                 // 1. Fetch secure access token from backend
                 const tokenRes = await getLiveKitToken(id, token)
 
@@ -375,6 +512,7 @@ export default function LiveMeetingPage() {
                     if (tokenRes.admitted === false) {
                         setAdmissionStatus('waiting')
                         setLiveKitConnectionState('idle')
+                        connectedMeetingIdRef.current = null
                         return
                     }
                     throw new Error(tokenRes.message || 'Failed to acquire LiveKit meeting token')
@@ -384,6 +522,8 @@ export default function LiveMeetingPage() {
                 if (!wsUrl) {
                     throw new Error('LiveKit WebSocket URL is missing in frontend configuration (NEXT_PUBLIC_LIVEKIT_URL)')
                 }
+
+                console.log(`[LiveKit] Connecting to server at: ${wsUrl}`)
 
                 // 2. Instantiate real LiveKit Room
                 const room = new Room({
@@ -395,48 +535,91 @@ export default function LiveMeetingPage() {
 
                 // Participant state synchronizer (local + real connected remotes only)
                 const syncParticipants = () => {
-                    if (!room) return
-                    const local = room.localParticipant
-                    const remotes = Array.from(room.remoteParticipants.values())
+                    if (!roomRef.current) return
+                    const local = roomRef.current.localParticipant
+                    const remotes = Array.from(roomRef.current.remoteParticipants.values())
                     setLiveKitParticipants([local, ...remotes])
                 }
 
                 room.on(RoomEvent.Connected, () => {
+                    console.log(`[LiveKit] Room connected successfully to meeting: ${id}`)
                     setLiveKitConnectionState('connected')
                     syncParticipants()
                 })
 
                 room.on(RoomEvent.Reconnecting, () => {
+                    console.log('[LiveKit] Room reconnecting...')
                     setLiveKitConnectionState('connecting')
                 })
 
                 room.on(RoomEvent.Reconnected, () => {
+                    console.log('[LiveKit] Room reconnected')
                     setLiveKitConnectionState('connected')
                     syncParticipants()
                 })
 
-                room.on(RoomEvent.Disconnected, () => {
+                room.on(RoomEvent.Disconnected, (reason) => {
+                    console.log('[LiveKit] Room disconnected:', reason)
                     setLiveKitConnectionState('idle')
                     setLiveKitParticipants([])
                 })
 
                 room.on(RoomEvent.ParticipantConnected, (p) => {
+                    console.log(`[LiveKit] Remote participant connected: ${p.identity} (${p.name})`)
                     syncParticipants()
                     toast.info(`${p.name || 'A participant'} connected`)
                 })
 
                 room.on(RoomEvent.ParticipantDisconnected, (p) => {
+                    console.log(`[LiveKit] Remote participant disconnected: ${p.identity}`)
+                    // Clean up audio elements for this participant
+                    remoteAudioElementsRef.current.forEach((audioEl, trackSid) => {
+                        if (trackSid.includes(p.identity)) {
+                            audioEl.pause()
+                            audioEl.srcObject = null
+                            audioEl.remove()
+                            remoteAudioElementsRef.current.delete(trackSid)
+                            console.log(`[LiveKit] Removed audio element for disconnected participant: ${p.identity}`)
+                        }
+                    })
                     syncParticipants()
                     toast(`${p.name || 'A participant'} left the meeting`, { duration: 2000 })
                 })
 
+                // ── WebRTC Audio & Video Track Subscriptions ──
+                room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                    console.log(`[LiveKit] TrackSubscribed event: kind=${track.kind}, sid=${track.sid}, from=${participant.identity}`)
+                    if (track.kind === Track.Kind.Audio) {
+                        attachRemoteAudioTrack(track as RemoteAudioTrack, publication, participant)
+                    }
+                    syncParticipants()
+                })
+
+                room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                    console.log(`[LiveKit] TrackUnsubscribed event: kind=${track.kind}, sid=${track.sid}, from=${participant.identity}`)
+                    if (track.kind === Track.Kind.Audio) {
+                        detachRemoteAudioTrack(track, publication, participant)
+                    }
+                    syncParticipants()
+                })
+
+                room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+                    console.log('[LiveKit] AudioPlaybackStatusChanged. canPlaybackAudio:', room.canPlaybackAudio)
+                    setNeedsAudioUnlock(!room.canPlaybackAudio)
+                })
+
                 room.on(RoomEvent.TrackPublished, () => syncParticipants())
-                room.on(RoomEvent.TrackSubscribed, () => syncParticipants())
-                room.on(RoomEvent.TrackUnsubscribed, () => syncParticipants())
+                room.on(RoomEvent.TrackUnpublished, () => syncParticipants())
                 room.on(RoomEvent.TrackMuted, () => syncParticipants())
                 room.on(RoomEvent.TrackUnmuted, () => syncParticipants())
-                room.on(RoomEvent.LocalTrackPublished, () => syncParticipants())
-                room.on(RoomEvent.LocalTrackUnpublished, () => syncParticipants())
+                room.on(RoomEvent.LocalTrackPublished, (pub) => {
+                    console.log(`[LiveKit] Local track published: source=${pub.source}`)
+                    syncParticipants()
+                })
+                room.on(RoomEvent.LocalTrackUnpublished, (pub) => {
+                    console.log(`[LiveKit] Local track unpublished: source=${pub.source}`)
+                    syncParticipants()
+                })
                 room.on(RoomEvent.ActiveSpeakersChanged, () => syncParticipants())
 
                 // 3. Connect to the LiveKit server
@@ -450,26 +633,27 @@ export default function LiveMeetingPage() {
                 setLiveKitRoom(room)
                 syncParticipants()
 
-                // 4. Automatically publish microphone & camera if user already enabled them
-                if (isMicOn) {
-                    try {
-                        await room.localParticipant.setMicrophoneEnabled(true)
-                    } catch (mErr: any) {
-                        console.warn('Initial mic publish notice:', mErr)
-                    }
-                }
-                if (isCameraOn) {
-                    try {
-                        await room.localParticipant.setCameraEnabled(true)
-                    } catch (cErr: any) {
-                        console.warn('Initial camera publish notice:', cErr)
-                    }
+                // 4. Attach any remote audio tracks that were already published before/during connect
+                room.remoteParticipants.forEach((p) => {
+                    p.audioTrackPublications.forEach((pub) => {
+                        if (pub.track && pub.isSubscribed) {
+                            console.log(`[LiveKit] Attaching pre-existing remote audio track for ${p.identity}`)
+                            attachRemoteAudioTrack(pub.track as RemoteAudioTrack, pub, p)
+                        }
+                    })
+                })
+
+                // Check initial audio playback status
+                if (!room.canPlaybackAudio) {
+                    console.log('[LiveKit] Initial audio playback requires user interaction')
+                    setNeedsAudioUnlock(true)
                 }
 
             } catch (err: any) {
                 if (isCancelled) return
-                console.error('LiveKit connection error:', err)
+                console.error('[LiveKit] Connection error:', err)
                 setLiveKitConnectionState('error')
+                connectedMeetingIdRef.current = null
                 setLiveKitError(err.message || 'Unable to establish realtime WebRTC connection')
                 toast.error('Realtime Media: ' + (err.message || 'Connection failed'))
             }
@@ -479,63 +663,217 @@ export default function LiveMeetingPage() {
 
         return () => {
             isCancelled = true
+            connectedMeetingIdRef.current = null
             if (roomRef.current) {
-                roomRef.current.disconnect()
+                try {
+                    roomRef.current.disconnect()
+                } catch (e) {
+                    console.warn('[LiveKit] Cleanup disconnect notice:', e)
+                }
                 roomRef.current = null
             }
+            // Clean up all remote audio elements
+            remoteAudioElementsRef.current.forEach((audioEl) => {
+                audioEl.pause()
+                audioEl.srcObject = null
+                audioEl.remove()
+            })
+            remoteAudioElementsRef.current.clear()
+
             setLiveKitRoom(null)
             setLiveKitParticipants([])
         }
-    }, [isAuthorized, admissionStatus, id, user, token])
+    }, [isAuthorized, admissionStatus, id, token, attachRemoteAudioTrack, detachRemoteAudioTrack])
 
-    // ── Real Camera, Mic, and Screen Share Controls ───────────────
-    const handleToggleCamera = async () => {
-        const nextState = !isCameraOn
-        setIsCameraOn(nextState)
-        if (roomRef.current) {
+    // ── Non-Blocking Real Camera, Mic, and Screen Share Controls ──
+
+    // Camera Toggle: Non-blocking, independent loading, safe media error categorization
+    const handleToggleCamera = useCallback(() => {
+        if (cameraLockRef.current) {
+            console.log('[LiveKit] Camera toggle in progress, ignoring extra click')
+            return
+        }
+
+        const room = roomRef.current
+        if (!room || room.state !== ConnectionState.Connected) {
+            toast.info('Connecting to meeting room, please wait a moment...')
+            return
+        }
+
+        cameraLockRef.current = true
+        setIsCameraLoading(true)
+
+        ;(async () => {
             try {
-                await roomRef.current.localParticipant.setCameraEnabled(nextState)
-            } catch (err: any) {
-                console.error('Camera toggle error:', err)
-                setIsCameraOn(!nextState)
-                toast.error('Unable to access camera: ' + (err.message || 'Permission denied'))
-            }
-        }
-        const socket = getSocket()
-        if (socket && socket.connected) {
-            socket.emit('meeting_media_toggle', { meetingId: id, isCameraOn: nextState })
-        }
-    }
+                const currentStatus = room.localParticipant.isCameraEnabled
+                const targetState = !currentStatus
 
-    const handleToggleMic = async () => {
-        const nextState = !isMicOn
-        setIsMicOn(nextState)
-        if (roomRef.current) {
+                console.log(`[LiveKit] Toggling camera to: ${targetState}`)
+
+                // 10-second timeout safeguard so user is never permanently stuck if browser prompt hangs
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Camera operation timed out. Please check browser permissions.')), 10000)
+                )
+
+                await Promise.race([
+                    room.localParticipant.setCameraEnabled(
+                        targetState,
+                        selectedCameraId ? { deviceId: selectedCameraId } : undefined
+                    ),
+                    timeoutPromise,
+                ])
+
+                const finalCameraState = room.localParticipant.isCameraEnabled
+                setIsCameraOn(finalCameraState)
+                console.log(`[LiveKit] Local camera is now: ${finalCameraState ? 'ENABLED' : 'DISABLED'}`)
+
+                const socket = getSocket()
+                if (socket && socket.connected) {
+                    socket.emit('meeting_media_toggle', { meetingId: id, isCameraOn: finalCameraState })
+                }
+
+                if (finalCameraState) {
+                    toast.success('Camera turned ON')
+                } else {
+                    toast.info('Camera turned OFF')
+                }
+            } catch (err: any) {
+                console.error('[LiveKit] Camera toggle error:', err)
+                const errName = err?.name || ''
+                const errMsg = err?.message || ''
+
+                if (errName === 'NotAllowedError' || errMsg.includes('Permission denied') || errMsg.includes('permission')) {
+                    toast.error('Camera permission was denied. Please allow camera access in your browser address bar.')
+                } else if (errName === 'NotFoundError' || errMsg.includes('not found')) {
+                    toast.error('No camera found on this device.')
+                } else if (errName === 'NotReadableError' || errMsg.includes('in use') || errMsg.includes('could not start')) {
+                    toast.error('Camera is currently in use by another application or browser tab.')
+                } else if (errName === 'AbortError') {
+                    toast.error('Camera access request was interrupted.')
+                } else {
+                    toast.error(`Camera error: ${errMsg || 'Unable to access video device'}`)
+                }
+
+                // Synchronize React state with actual room publication state
+                if (roomRef.current?.localParticipant) {
+                    setIsCameraOn(roomRef.current.localParticipant.isCameraEnabled)
+                }
+            } finally {
+                cameraLockRef.current = false
+                setIsCameraLoading(false)
+            }
+        })()
+    }, [id, selectedCameraId])
+
+    // Microphone Toggle: Non-blocking, independent loading, safe media error categorization
+    const handleToggleMic = useCallback(() => {
+        if (micLockRef.current) {
+            console.log('[LiveKit] Microphone toggle in progress, ignoring extra click')
+            return
+        }
+
+        const room = roomRef.current
+        if (!room || room.state !== ConnectionState.Connected) {
+            toast.info('Connecting to meeting room, please wait a moment...')
+            return
+        }
+
+        micLockRef.current = true
+        setIsMicLoading(true)
+
+        ;(async () => {
             try {
-                await roomRef.current.localParticipant.setMicrophoneEnabled(nextState)
-            } catch (err: any) {
-                console.error('Microphone toggle error:', err)
-                setIsMicOn(!nextState)
-                toast.error('Unable to access microphone: ' + (err.message || 'Permission denied'))
-            }
-        }
-        const socket = getSocket()
-        if (socket && socket.connected) {
-            socket.emit('meeting_media_toggle', { meetingId: id, isMicOn: nextState })
-        }
-    }
+                const currentStatus = room.localParticipant.isMicrophoneEnabled
+                const targetState = !currentStatus
 
-    const handleToggleScreenShare = async () => {
-        if (!roomRef.current) return
-        const nextState = !isScreenSharing
-        try {
-            await roomRef.current.localParticipant.setScreenShareEnabled(nextState)
-            setIsScreenSharing(nextState)
-        } catch (err: any) {
-            console.error('Screen share toggle error:', err)
-            toast.error('Screen share notice: ' + (err.message || 'Permission denied or stopped'))
+                console.log(`[LiveKit] Toggling microphone to: ${targetState}`)
+
+                // 10-second timeout safeguard so user is never permanently stuck if browser prompt hangs
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Microphone operation timed out. Please check browser permissions.')), 10000)
+                )
+
+                await Promise.race([
+                    room.localParticipant.setMicrophoneEnabled(
+                        targetState,
+                        selectedMicId ? { deviceId: selectedMicId } : undefined
+                    ),
+                    timeoutPromise,
+                ])
+
+                const finalMicState = room.localParticipant.isMicrophoneEnabled
+                setIsMicOn(finalMicState)
+                console.log(`[LiveKit] Local microphone is now: ${finalMicState ? 'UNMUTED' : 'MUTED'}`)
+
+                const socket = getSocket()
+                if (socket && socket.connected) {
+                    socket.emit('meeting_media_toggle', { meetingId: id, isMicOn: finalMicState })
+                }
+
+                if (finalMicState) {
+                    toast.success('Microphone UNMUTED')
+                } else {
+                    toast.info('Microphone MUTED')
+                }
+            } catch (err: any) {
+                console.error('[LiveKit] Microphone toggle error:', err)
+                const errName = err?.name || ''
+                const errMsg = err?.message || ''
+
+                if (errName === 'NotAllowedError' || errMsg.includes('Permission denied') || errMsg.includes('permission')) {
+                    toast.error('Microphone permission was denied. Please allow microphone access in your browser address bar.')
+                } else if (errName === 'NotFoundError' || errMsg.includes('not found')) {
+                    toast.error('No microphone found on this device.')
+                } else if (errName === 'NotReadableError' || errMsg.includes('in use') || errMsg.includes('could not start')) {
+                    toast.error('Microphone is in use by another application.')
+                } else if (errName === 'AbortError') {
+                    toast.error('Microphone access request was interrupted.')
+                } else {
+                    toast.error(`Microphone error: ${errMsg || 'Unable to access audio device'}`)
+                }
+
+                // Synchronize React state with actual room publication state
+                if (roomRef.current?.localParticipant) {
+                    setIsMicOn(roomRef.current.localParticipant.isMicrophoneEnabled)
+                }
+            } finally {
+                micLockRef.current = false
+                setIsMicLoading(false)
+            }
+        })()
+    }, [id, selectedMicId])
+
+    // Screen Share Toggle: Non-blocking, independent loading
+    const handleToggleScreenShare = useCallback(() => {
+        if (screenShareLockRef.current) return
+        const room = roomRef.current
+        if (!room || room.state !== ConnectionState.Connected) {
+            toast.info('Connecting to meeting room, please wait a moment...')
+            return
         }
-    }
+
+        screenShareLockRef.current = true
+        setIsScreenShareLoading(true)
+
+        ;(async () => {
+            try {
+                const targetState = !isScreenSharing
+                await room.localParticipant.setScreenShareEnabled(targetState)
+                setIsScreenSharing(room.localParticipant.isScreenShareEnabled)
+                if (targetState) {
+                    toast.success('Screen share started')
+                } else {
+                    toast.info('Screen share stopped')
+                }
+            } catch (err: any) {
+                console.error('[LiveKit] Screen share toggle error:', err)
+                toast.error('Screen share notice: ' + (err.message || 'Permission denied or stopped'))
+            } finally {
+                screenShareLockRef.current = false
+                setIsScreenShareLoading(false)
+            }
+        })()
+    }, [isScreenSharing])
 
     const handleToggleHand = () => {
         const nextState = !isHandRaised
@@ -553,8 +891,9 @@ export default function LiveMeetingPage() {
         if (roomRef.current) {
             try {
                 await roomRef.current.switchActiveDevice('videoinput', deviceId)
+                console.log('[LiveKit] Switched camera active device to:', deviceId)
             } catch (err: any) {
-                console.warn('Switch camera error:', err)
+                console.warn('[LiveKit] Switch camera error:', err)
             }
         }
     }
@@ -564,8 +903,9 @@ export default function LiveMeetingPage() {
         if (roomRef.current) {
             try {
                 await roomRef.current.switchActiveDevice('audioinput', deviceId)
+                console.log('[LiveKit] Switched mic active device to:', deviceId)
             } catch (err: any) {
-                console.warn('Switch mic error:', err)
+                console.warn('[LiveKit] Switch mic error:', err)
             }
         }
     }
@@ -576,7 +916,9 @@ export default function LiveMeetingPage() {
             if (roomRef.current) {
                 try {
                     await roomRef.current.disconnect()
-                } catch {}
+                } catch (e) {
+                    console.warn('[LiveKit] Leave disconnect notice:', e)
+                }
                 roomRef.current = null
             }
             const socket = getSocket()
@@ -740,6 +1082,13 @@ export default function LiveMeetingPage() {
 
     const realParticipantCount = displayParticipants.length || (admissionStatus === 'admitted' ? 1 : 0)
 
+    // Local camera track for settings modal preview
+    const localMediaStream = useMemo(() => {
+        const localPub = roomRef.current?.localParticipant?.getTrackPublication(Track.Source.Camera)
+        const localTrack = localPub?.track as LocalVideoTrack | undefined
+        return localTrack?.mediaStream || null
+    }, [isCameraOn, liveKitParticipants])
+
     // ── LOADING STATE ─────────────────────────────────────────────
     if (authLoading) {
         return (
@@ -832,6 +1181,31 @@ export default function LiveMeetingPage() {
     return (
         <div className="h-screen bg-slate-950 flex flex-col text-slate-100 overflow-hidden select-none font-sans relative">
 
+            {/* ── Audio Autoplay Unlock Prompt Banner (Non-blocking) ── */}
+            <AnimatePresence>
+                {needsAudioUnlock && (
+                    <motion.div
+                        initial={{ y: -60, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: -60, opacity: 0 }}
+                        onClick={handleUnlockAudio}
+                        className="absolute top-16 left-1/2 -translate-x-1/2 z-50 bg-indigo-600/95 hover:bg-indigo-500 border border-indigo-400/50 shadow-2xl rounded-2xl px-5 py-2.5 flex items-center gap-3 backdrop-blur-md cursor-pointer transition-all"
+                    >
+                        <Volume2 size={18} className="text-white animate-bounce" />
+                        <div className="text-left">
+                            <p className="text-xs font-bold text-white">Audio Playback Blocked by Browser</p>
+                            <p className="text-[11px] text-indigo-100">Click anywhere to enable meeting audio and hear participants 🔊</p>
+                        </div>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); handleUnlockAudio() }}
+                            className="bg-white text-indigo-700 text-xs font-semibold px-3 py-1 rounded-lg hover:bg-indigo-50 transition-colors ml-2"
+                        >
+                            Enable Audio
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* ── Floating Teacher Admission Banner ───────────────── */}
             <AnimatePresence>
                 {isTeacher && waitingRequests.length > 0 && (
@@ -874,10 +1248,13 @@ export default function LiveMeetingPage() {
                 <div className="bg-red-600/90 text-white text-xs px-4 py-2 flex items-center justify-between flex-shrink-0">
                     <div className="flex items-center gap-2">
                         <AlertCircle size={15} />
-                        <span>LiveKit Media Status: {liveKitError || 'Failed to establish WebRTC connection'}. Check that LiveKit server is reachable.</span>
+                        <span>LiveKit Media Status: {liveKitError || 'Failed to establish WebRTC connection'}.</span>
                     </div>
                     <button
-                        onClick={() => setAdmissionStatus('admitted')}
+                        onClick={() => {
+                            connectedMeetingIdRef.current = null
+                            setAdmissionStatus('admitted')
+                        }}
                         className="bg-white text-red-700 px-2.5 py-0.5 rounded-md font-semibold text-[11px] hover:bg-slate-100"
                     >
                         Retry
@@ -1314,19 +1691,21 @@ export default function LiveMeetingPage() {
                 )}
             </AnimatePresence>
 
-            {/* ── Bottom Control Bar ───────────────────────────────── */}
+            {/* ── Bottom Control Bar (Non-blocking, independent media states) ── */}
             <div className="bg-slate-900/95 border-t border-slate-800/80 px-4 py-3 flex items-center justify-between gap-2 flex-shrink-0 backdrop-blur-md">
                 {/* Left controls: Mic, Camera, Device Settings */}
                 <div className="flex items-center gap-2">
                     <CtrlBtn
                         active={isMicOn}
                         danger={!isMicOn}
+                        loading={isMicLoading}
                         onClick={handleToggleMic}
                         icon={!isMicOn ? <MicOff size={18} /> : <Mic size={18} />}
                         label={!isMicOn ? 'Unmute' : 'Mute'}
                     />
                     <CtrlBtn
                         active={isCameraOn}
+                        loading={isCameraLoading}
                         onClick={handleToggleCamera}
                         icon={!isCameraOn ? <VideoOff size={18} /> : <Video size={18} />}
                         label={!isCameraOn ? 'Start Video' : 'Stop Video'}
@@ -1344,6 +1723,7 @@ export default function LiveMeetingPage() {
                 <div className="flex items-center gap-2 flex-wrap justify-center">
                     <CtrlBtn
                         active={isScreenSharing}
+                        loading={isScreenShareLoading}
                         onClick={handleToggleScreenShare}
                         icon={<ScreenShare size={18} />}
                         label={isScreenSharing ? 'Stop Sharing' : 'Share Screen'}
@@ -1428,7 +1808,7 @@ export default function LiveMeetingPage() {
                 onRefreshDevices={refreshDevices}
                 isCameraOn={isCameraOn}
                 isMicOn={isMicOn}
-                localStream={null}
+                localStream={localMediaStream}
                 audioLevel={0}
                 onToggleCamera={handleToggleCamera}
                 onToggleMic={handleToggleMic}
@@ -1455,17 +1835,17 @@ function MeetingTile({
     compact,
 }: MeetingTileProps) {
     const videoRef = useRef<HTMLVideoElement>(null)
-    const audioRef = useRef<HTMLAudioElement>(null)
 
     const [hasVideo, setHasVideo] = useState(false)
     const [isMuted, setIsMuted] = useState(true)
     const [isSpeaking, setIsSpeaking] = useState(false)
 
-    // Sync state with LiveKit participant track events
+    // Sync tile track indicators with LiveKit participant track publication events
     useEffect(() => {
         const updateTrackStates = () => {
             const camPub = participant.getTrackPublication(Track.Source.Camera)
-            setHasVideo(Boolean(camPub && !camPub.isMuted && camPub.track))
+            const videoAvailable = Boolean(camPub && !camPub.isMuted && camPub.track)
+            setHasVideo(videoAvailable)
 
             const micPub = participant.getTrackPublication(Track.Source.Microphone)
             setIsMuted(!micPub || micPub.isMuted)
@@ -1480,6 +1860,8 @@ function MeetingTile({
         participant.on(ParticipantEvent.TrackUnsubscribed, updateTrackStates)
         participant.on(ParticipantEvent.TrackMuted, updateTrackStates)
         participant.on(ParticipantEvent.TrackUnmuted, updateTrackStates)
+        participant.on(ParticipantEvent.LocalTrackPublished, updateTrackStates)
+        participant.on(ParticipantEvent.LocalTrackUnpublished, updateTrackStates)
         participant.on(ParticipantEvent.IsSpeakingChanged, (sp) => setIsSpeaking(sp))
 
         return () => {
@@ -1488,6 +1870,8 @@ function MeetingTile({
             participant.off(ParticipantEvent.TrackUnsubscribed, updateTrackStates)
             participant.off(ParticipantEvent.TrackMuted, updateTrackStates)
             participant.off(ParticipantEvent.TrackUnmuted, updateTrackStates)
+            participant.off(ParticipantEvent.LocalTrackPublished, updateTrackStates)
+            participant.off(ParticipantEvent.LocalTrackUnpublished, updateTrackStates)
         }
     }, [participant])
 
@@ -1505,21 +1889,6 @@ function MeetingTile({
         }
     }, [participant, hasVideo])
 
-    // Attach Real Audio Track to <audio> element (remote participants only)
-    useEffect(() => {
-        if (isSelf) return
-        const el = audioRef.current
-        const micPub = participant.getTrackPublication(Track.Source.Microphone)
-        const track = micPub?.track as AudioTrack | undefined
-
-        if (el && track && !isMuted) {
-            track.attach(el)
-            return () => {
-                track.detach(el)
-            }
-        }
-    }, [participant, isMuted, isSelf])
-
     const name = participant.name || (isSelf ? 'You' : 'Participant')
     const initials = (name.trim().split(/\s+/).map(p => p[0]).join('') || 'U').slice(0, 2).toUpperCase()
 
@@ -1535,10 +1904,7 @@ function MeetingTile({
             )}
             style={{ backgroundColor: '#0f172a' }}
         >
-            {/* Real Remote Audio Playback Element (Hidden, non-self only) */}
-            {!isSelf && <audio ref={audioRef} autoPlay playsInline />}
-
-            {/* Live Real WebRTC Camera Video */}
+            {/* Live Real WebRTC Camera Video (Remote or Local) */}
             {hasVideo ? (
                 <video
                     ref={videoRef}
@@ -1663,7 +2029,7 @@ function ScreenShareStage({
     )
 }
 
-// Control Bar Button
+// Control Bar Button with independent loading and disabled states
 function CtrlBtn({
     active,
     danger,
@@ -1672,6 +2038,8 @@ function CtrlBtn({
     label,
     badge,
     badgeColor = 'bg-primary',
+    loading = false,
+    disabled = false,
 }: {
     active?: boolean
     danger?: boolean
@@ -1680,22 +2048,26 @@ function CtrlBtn({
     label: string
     badge?: string
     badgeColor?: string
+    loading?: boolean
+    disabled?: boolean
 }) {
     return (
         <button
             onClick={onClick}
+            disabled={disabled || loading}
             className={cn(
                 'relative flex flex-col items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all',
                 danger
                     ? 'bg-red-600/20 text-red-400 hover:bg-red-600/30'
                     : active
                     ? 'bg-primary/20 text-blue-400 hover:bg-primary/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80',
+                (disabled || loading) && 'opacity-70 cursor-not-allowed'
             )}
         >
             <div className="relative">
-                {icon}
-                {badge && (
+                {loading ? <RefreshCw size={18} className="animate-spin text-amber-400" /> : icon}
+                {badge && !loading && (
                     <span className={cn(
                         'absolute -top-1.5 -right-2 text-[9px] text-white font-bold px-1 rounded-full min-w-3.5 h-3.5 flex items-center justify-center',
                         badgeColor
@@ -1704,7 +2076,9 @@ function CtrlBtn({
                     </span>
                 )}
             </div>
-            <span className="text-[10px] font-medium hidden md:inline">{label}</span>
+            <span className="text-[10px] font-medium hidden md:inline">
+                {loading ? 'Connecting...' : label}
+            </span>
         </button>
     )
 }

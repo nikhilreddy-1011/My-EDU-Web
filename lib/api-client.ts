@@ -1,21 +1,28 @@
 export const getBaseUrl = (): string => {
-    // If running in browser and accessed through LAN IP or custom domain (e.g., on mobile)
+    // 1. Check if an explicit production API URL is set in environment variables
+    const envUrl = process.env.NEXT_PUBLIC_API_URL;
+    if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
+        return envUrl.replace(/\/+$/, '');
+    }
+
     if (typeof window !== 'undefined') {
+        // 2. Allow user-configured override in localStorage for debugging
+        const customUrl = localStorage.getItem('ls_api_url');
+        if (customUrl && customUrl.trim().length > 0) {
+            return customUrl.trim().replace(/\/+$/, '');
+        }
+
         const hostname = window.location.hostname;
-        // If accessed via LAN IP or hostname (not localhost or 127.0.0.1)
-        if (hostname && hostname !== 'localhost' && hostname !== '127.0.0.1') {
-            const envUrl = process.env.NEXT_PUBLIC_API_URL;
-            // If configured with an explicit production domain (not pointing to localhost)
-            if (envUrl && !envUrl.includes('localhost') && !envUrl.includes('127.0.0.1')) {
-                return envUrl;
-            }
-            // Automatically use the same host IP as the browser with backend port 5000
-            const protocol = window.location.protocol;
+        const protocol = window.location.protocol;
+
+        // 3. Only use port 5000 if accessed via private LAN IP (e.g. 192.168.x.x, 172.x.x.x, 10.x.x.x)
+        const isLanIp = /^(192\.168\.|172\.\d+\.|10\.)/.test(hostname);
+        if (isLanIp) {
             return `${protocol}//${hostname}:5000`;
         }
     }
 
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    return (envUrl || 'http://localhost:5000').replace(/\/+$/, '');
 };
 
 type RequestOptions = {
@@ -91,8 +98,12 @@ export const apiClient = async <T = unknown>(
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Network error';
         if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('fetch failed')) {
+            const isLocal = baseUrl.includes('localhost') || baseUrl.includes('127.0.0.1');
+            const hint = isLocal
+                ? 'Please make sure the backend server is running on port 5000.'
+                : 'Please verify the backend server on Render is awake and healthy.';
             throw new ApiError(
-                `Unable to connect to the backend server at ${baseUrl}. Please make sure the backend server is running on port 5000.`,
+                `Unable to connect to the backend server at ${baseUrl}. ${hint}`,
                 0
             );
         }

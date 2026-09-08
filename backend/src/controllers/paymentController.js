@@ -52,71 +52,86 @@ const createOrder = async (req, res, next) => {
             });
         }
 
-        const razorpay = getRazorpayInstance();
-        if (!razorpay) {
-            return res.status(503).json({
-                success: false,
-                message: 'Payment service is temporarily unavailable. Please check Razorpay configuration.',
-            });
-        }
-
         // Convert price to paise (1 INR = 100 paise). Ensure integer.
         const amountInPaise = Math.round(course.price * 100);
 
         // Unique receipt identifier (max 40 characters for Razorpay)
         const uniqueReceipt = `rcpt_${Date.now().toString().slice(-8)}_${Math.random().toString(36).substring(2, 7)}`;
 
-        const orderOptions = {
-            amount: amountInPaise,
-            currency: 'INR',
-            receipt: uniqueReceipt,
-            notes: {
-                userId: req.user._id.toString(),
-                courseId: course._id.toString(),
-                courseTitle: course.title.substring(0, 40),
-            },
-        };
+        const isTestKey = Boolean(
+            process.env.RAZORPAY_KEY_ID &&
+            process.env.RAZORPAY_KEY_ID.trim().startsWith('rzp_test_')
+        );
+
+        // A real Razorpay secret is a long (20+ char) alphanumeric string.
+        // If the secret looks like a placeholder, skip the API call entirely.
+        const secret = (process.env.RAZORPAY_KEY_SECRET || '').trim();
+        const isPlaceholderSecret =
+            !secret ||
+            secret.length < 20 ||
+            secret.toLowerCase().includes('test') ||
+            secret.toLowerCase().includes('secret') ||
+            secret.toLowerCase().includes('your_') ||
+            secret.toLowerCase().includes('placeholder');
 
         let razorpayOrder;
-        try {
-            razorpayOrder = await razorpay.orders.create(orderOptions);
-        } catch (rzpErr) {
-            // Razorpay SDK error can surface in multiple shapes — log fully for debugging
-            console.error('[Razorpay Order Creation Error]:', JSON.stringify(rzpErr?.error || rzpErr?.message || rzpErr));
 
-            const errDescription = rzpErr?.error?.description || rzpErr?.message || '';
-            const errCode = rzpErr?.error?.code || '';
-            const httpStatus = rzpErr?.statusCode || rzpErr?.status || 0;
-
-            const isAuthError =
-                httpStatus === 401 ||
-                errCode === 'BAD_REQUEST_ERROR' ||
-                errDescription.toLowerCase().includes('authentication') ||
-                errDescription.toLowerCase().includes('unauthorized') ||
-                errDescription.toLowerCase().includes('invalid') ||
-                errDescription.toLowerCase().includes('access denied');
-
-            const isTestKey = Boolean(
-                process.env.RAZORPAY_KEY_ID &&
-                process.env.RAZORPAY_KEY_ID.trim().startsWith('rzp_test_')
-            );
-
-            // If using a test/placeholder key, always provide a mock test order
-            // so the frontend Razorpay checkout modal can open without a real API call
-            if (isTestKey) {
-                console.warn(`[Payment Notice]: Razorpay API call failed (${httpStatus || 'unknown status'}) with test key. Falling back to test mode order. Error: ${errDescription}`);
-                razorpayOrder = {
-                    id: `order_test_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-                    amount: amountInPaise,
-                    currency: 'INR',
-                };
-            } else {
-                return res.status(502).json({
+        if (isTestKey && isPlaceholderSecret) {
+            // Proactively skip Razorpay API — generate a test order immediately
+            console.warn('[Payment Notice]: Placeholder Razorpay secret detected. Generating test mode order without calling API.');
+            razorpayOrder = {
+                id: `order_test_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                amount: amountInPaise,
+                currency: 'INR',
+            };
+        } else {
+            // Real credentials — try the actual Razorpay API
+            const razorpay = getRazorpayInstance();
+            if (!razorpay) {
+                return res.status(503).json({
                     success: false,
-                    message: isAuthError
-                        ? 'Razorpay authentication failed. Please configure a valid Razorpay Key Secret.'
-                        : 'Unable to start payment. Please try again.',
+                    message: 'Payment service is temporarily unavailable. Please check Razorpay configuration.',
                 });
+            }
+
+            const orderOptions = {
+                amount: amountInPaise,
+                currency: 'INR',
+                receipt: uniqueReceipt,
+                notes: {
+                    userId: req.user._id.toString(),
+                    courseId: course._id.toString(),
+                    courseTitle: course.title.substring(0, 40),
+                },
+            };
+
+            try {
+                razorpayOrder = await razorpay.orders.create(orderOptions);
+            } catch (rzpErr) {
+                console.error('[Razorpay Order Creation Error]:', JSON.stringify(rzpErr?.error || rzpErr?.message || rzpErr));
+                const errDescription = rzpErr?.error?.description || rzpErr?.message || '';
+                const httpStatus = rzpErr?.statusCode || rzpErr?.status || 0;
+                const isAuthError =
+                    httpStatus === 401 ||
+                    errDescription.toLowerCase().includes('authentication') ||
+                    errDescription.toLowerCase().includes('unauthorized');
+
+                if (isTestKey) {
+                    // Even with real-looking secret, fall back to test order on any error
+                    console.warn(`[Payment Notice]: Razorpay API failed (${httpStatus}). Using test mode order. Error: ${errDescription}`);
+                    razorpayOrder = {
+                        id: `order_test_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                        amount: amountInPaise,
+                        currency: 'INR',
+                    };
+                } else {
+                    return res.status(502).json({
+                        success: false,
+                        message: isAuthError
+                            ? 'Razorpay authentication failed. Please configure a valid Razorpay Key Secret.'
+                            : 'Unable to start payment. Please try again.',
+                    });
+                }
             }
         }
 

@@ -21,6 +21,14 @@ const liveClassRoutes = require('./routes/liveClass.routes');
 
 const app = express();
 
+// Normalize multiple slashes in request path (e.g. //api/v1/... -> /api/v1/...)
+app.use((req, res, next) => {
+    if (req.url && req.url.startsWith('//')) {
+        req.url = req.url.replace(/^\/+/, '/');
+    }
+    next();
+});
+
 // --------------------------------------------------
 // Security Middleware
 // --------------------------------------------------

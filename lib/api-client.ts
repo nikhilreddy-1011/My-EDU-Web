@@ -91,10 +91,12 @@ export const apiClient = async <T = unknown>(
         config.body = JSON.stringify(body);
     }
 
-    const baseUrl = getBaseUrl();
+    const cleanBaseUrl = getBaseUrl().replace(/\/+$/, '');
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const requestUrl = `${cleanBaseUrl}${cleanEndpoint}`;
     let response: Response;
     try {
-        response = await fetch(`${baseUrl}${endpoint}`, config);
+        response = await fetch(requestUrl, config);
     } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Network error';
         if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('fetch failed')) {

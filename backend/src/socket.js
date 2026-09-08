@@ -105,7 +105,7 @@ const initSocket = (server) => {
             }
         });
 
-        // ── Live Meeting / Video Session Tracking ─────────────────
+        // ── Live Meeting / Video Session Tracking with Teacher Admission Control
         socket.on('join_meeting', async (data = {}) => {
             try {
                 const { meetingId, isCameraOn = false, isMicOn = false, isHandRaised = false, token } = data;
@@ -128,69 +128,252 @@ const initSocket = (server) => {
 
                 const userId = user._id.toString();
                 const roomName = `meeting_${meetingId}`;
+                const isTeacher = user.role === 'TEACHER' || user.role === 'ADMIN';
 
+                // Initialize meeting session structure
                 if (!meetingSessions.has(meetingId)) {
-                    meetingSessions.set(meetingId, new Map());
+                    meetingSessions.set(meetingId, {
+                        meetingId,
+                        hostUserId: isTeacher ? userId : null,
+                        acceptedParticipants: new Map(),
+                        waitingRequests: new Map(),
+                    });
                 }
 
-                const meetingMap = meetingSessions.get(meetingId);
+                const session = meetingSessions.get(meetingId);
+                if (isTeacher && !session.hostUserId) {
+                    session.hostUserId = userId;
+                }
 
-                // Build clean participant session object
+                const alreadyAdmitted = session.acceptedParticipants.has(userId);
+
+                // TEACHER or ALREADY ADMITTED USER enters the live meeting directly
+                if (isTeacher || alreadyAdmitted) {
+                    // Remove from waiting requests if they were there
+                    session.waitingRequests.delete(userId);
+
+                    const participant = {
+                        id: userId,
+                        userId,
+                        socketId: socket.id,
+                        name: user.name,
+                        email: user.email,
+                        avatar: user.avatar || '',
+                        role: user.role,
+                        isTeacher,
+                        isCameraOn: Boolean(isCameraOn),
+                        isMicOn: Boolean(isMicOn),
+                        isHandRaised: Boolean(isHandRaised),
+                        color: getUserColor(userId),
+                        initials: getInitials(user.name),
+                        joinedAt: new Date(),
+                    };
+
+                    // Keyed by userId to prevent duplicates on refresh
+                    session.acceptedParticipants.set(userId, participant);
+
+                    const userMeetings = socketMeetings.get(socket.id);
+                    if (userMeetings) userMeetings.add(meetingId);
+
+                    socket.join(roomName);
+
+                    const currentParticipants = Array.from(session.acceptedParticipants.values());
+                    const count = currentParticipants.length;
+                    const waitingList = Array.from(session.waitingRequests.values());
+
+                    // Send complete room state to joining participant
+                    socket.emit('meeting_state', {
+                        meetingId,
+                        status: 'admitted',
+                        participants: currentParticipants,
+                        participantCount: count,
+                        waitingRequests: waitingList,
+                    });
+
+                    // Broadcast join event to all other room members
+                    socket.to(roomName).emit('participant_joined', {
+                        meetingId,
+                        participant,
+                        participantCount: count,
+                    });
+
+                    io.to(roomName).emit('participant_count_updated', {
+                        meetingId,
+                        participantCount: count,
+                    });
+
+                    console.log(`[Meeting ${meetingId}]: User "${user.name}" (${user.role}) admitted to room. Total: ${count}`);
+                } else {
+                    // STUDENT: Must wait for teacher admission!
+                    const request = {
+                        userId,
+                        socketId: socket.id,
+                        name: user.name,
+                        email: user.email,
+                        avatar: user.avatar || '',
+                        initials: getInitials(user.name),
+                        requestedAt: new Date(),
+                        isCameraOn: Boolean(isCameraOn),
+                        isMicOn: Boolean(isMicOn),
+                    };
+
+                    session.waitingRequests.set(userId, request);
+
+                    const userMeetings = socketMeetings.get(socket.id);
+                    if (userMeetings) userMeetings.add(meetingId);
+
+                    socket.join(`waiting_${meetingId}`);
+
+                    // Send waiting state to student
+                    socket.emit('join_waiting', {
+                        meetingId,
+                        status: 'waiting',
+                        message: 'Waiting for the teacher to admit you...',
+                    });
+
+                    // Notify teacher/host in the live meeting room
+                    io.to(roomName).emit('new_join_request', {
+                        meetingId,
+                        request,
+                        waitingCount: session.waitingRequests.size,
+                    });
+
+                    io.to(roomName).emit('waiting_requests_updated', {
+                        meetingId,
+                        waitingRequests: Array.from(session.waitingRequests.values()),
+                    });
+
+                    console.log(`[Meeting ${meetingId}]: Student "${user.name}" queued in waiting room.`);
+                }
+            } catch (err) {
+                console.error('Socket join_meeting error:', err);
+                socket.emit('meeting_error', { message: 'Failed to join meeting' });
+            }
+        });
+
+        // Teacher Admits Student into Live Class
+        socket.on('admit_student', ({ meetingId, studentId, studentUserId } = {}) => {
+            try {
+                const targetStudentId = studentId || studentUserId;
+                if (!meetingId || !targetStudentId || !socket.user) return;
+                const isTeacher = socket.user.role === 'TEACHER' || socket.user.role === 'ADMIN';
+                if (!isTeacher) {
+                    return socket.emit('meeting_error', { message: 'Only instructors can admit students' });
+                }
+
+                const session = meetingSessions.get(meetingId);
+                if (!session) return;
+
+                const request = session.waitingRequests.get(targetStudentId);
+                if (!request) return;
+
+                // Remove from waiting requests
+                session.waitingRequests.delete(targetStudentId);
+
+                // Build clean admitted participant
                 const participant = {
-                    id: userId,
-                    userId,
-                    socketId: socket.id,
-                    name: user.name,
-                    avatar: user.avatar || '',
-                    role: user.role, // 'STUDENT', 'TEACHER', 'ADMIN'
-                    isTeacher: user.role === 'TEACHER' || user.role === 'ADMIN',
-                    isCameraOn: Boolean(isCameraOn),
-                    isMicOn: Boolean(isMicOn),
-                    isHandRaised: Boolean(isHandRaised),
-                    color: getUserColor(userId),
-                    initials: getInitials(user.name),
+                    id: targetStudentId,
+                    userId: targetStudentId,
+                    socketId: request.socketId,
+                    name: request.name,
+                    email: request.email,
+                    avatar: request.avatar,
+                    role: 'STUDENT',
+                    isTeacher: false,
+                    isCameraOn: Boolean(request.isCameraOn),
+                    isMicOn: Boolean(request.isMicOn),
+                    isHandRaised: false,
+                    color: getUserColor(studentId),
+                    initials: request.initials,
                     joinedAt: new Date(),
                 };
 
-                // Add or update participant (keyed by userId to prevent duplicates on refresh)
-                meetingMap.set(userId, participant);
+                session.acceptedParticipants.set(targetStudentId, participant);
 
-                // Register meeting on this socket
-                const userMeetings = socketMeetings.get(socket.id);
-                if (userMeetings) {
-                    userMeetings.add(meetingId);
+                const roomName = `meeting_${meetingId}`;
+
+                // Target student socket: leave waiting room, join live meeting room
+                const targetSocket = io.sockets.sockets.get(request.socketId);
+                if (targetSocket) {
+                    targetSocket.leave(`waiting_${meetingId}`);
+                    targetSocket.join(roomName);
+
+                    const currentParticipants = Array.from(session.acceptedParticipants.values());
+                    const count = currentParticipants.length;
+
+                    targetSocket.emit('join_admitted', {
+                        meetingId,
+                        status: 'admitted',
+                        participants: currentParticipants,
+                        participantCount: count,
+                    });
                 }
 
-                // Join Socket.io room
-                socket.join(roomName);
-
-                const currentParticipants = Array.from(meetingMap.values());
+                const currentParticipants = Array.from(session.acceptedParticipants.values());
                 const count = currentParticipants.length;
 
-                // Send complete current room state to joining participant
-                socket.emit('meeting_state', {
-                    meetingId,
-                    participants: currentParticipants,
-                    participantCount: count,
-                });
-
-                // Broadcast join event to all other room members
-                socket.to(roomName).emit('participant_joined', {
+                // Broadcast participant_joined to all other room members
+                io.to(roomName).emit('participant_joined', {
                     meetingId,
                     participant,
                     participantCount: count,
                 });
 
-                // Broadcast updated count
                 io.to(roomName).emit('participant_count_updated', {
                     meetingId,
                     participantCount: count,
                 });
 
-                console.log(`[Meeting ${meetingId}]: User "${user.name}" (${user.role}) joined. Total: ${count}`);
+                // Update waiting list for the teacher
+                io.to(roomName).emit('waiting_requests_updated', {
+                    meetingId,
+                    waitingRequests: Array.from(session.waitingRequests.values()),
+                });
+
+                console.log(`[Meeting ${meetingId}]: Teacher "${socket.user.name}" admitted student "${request.name}". Total: ${count}`);
             } catch (err) {
-                console.error('Socket join_meeting error:', err);
-                socket.emit('meeting_error', { message: 'Failed to join meeting' });
+                console.error('Socket admit_student error:', err);
+            }
+        });
+
+        // Teacher Rejects Student
+        socket.on('reject_student', ({ meetingId, studentId, studentUserId } = {}) => {
+            try {
+                const targetStudentId = studentId || studentUserId;
+                if (!meetingId || !targetStudentId || !socket.user) return;
+                const isTeacher = socket.user.role === 'TEACHER' || socket.user.role === 'ADMIN';
+                if (!isTeacher) {
+                    return socket.emit('meeting_error', { message: 'Only instructors can decline join requests' });
+                }
+
+                const session = meetingSessions.get(meetingId);
+                if (!session) return;
+
+                const request = session.waitingRequests.get(targetStudentId);
+                if (!request) return;
+
+                session.waitingRequests.delete(targetStudentId);
+
+                // Notify student socket of rejection
+                const targetSocket = io.sockets.sockets.get(request.socketId);
+                if (targetSocket) {
+                    targetSocket.leave(`waiting_${meetingId}`);
+                    targetSocket.emit('join_rejected', {
+                        meetingId,
+                        status: 'rejected',
+                        message: 'Your request to join this live class was declined by the instructor.',
+                    });
+                }
+
+                const roomName = `meeting_${meetingId}`;
+                io.to(roomName).emit('waiting_requests_updated', {
+                    meetingId,
+                    waitingRequests: Array.from(session.waitingRequests.values()),
+                });
+
+                console.log(`[Meeting ${meetingId}]: Teacher "${socket.user.name}" rejected student "${request.name}".`);
+            } catch (err) {
+                console.error('Socket reject_student error:', err);
             }
         });
 
@@ -202,10 +385,10 @@ const initSocket = (server) => {
         socket.on('meeting_media_toggle', ({ meetingId, isCameraOn, isMicOn, isHandRaised } = {}) => {
             if (!meetingId || !socket.user) return;
             const userId = socket.user._id.toString();
-            const meetingMap = meetingSessions.get(meetingId);
-            if (!meetingMap || !meetingMap.has(userId)) return;
+            const session = meetingSessions.get(meetingId);
+            if (!session || !session.acceptedParticipants.has(userId)) return;
 
-            const participant = meetingMap.get(userId);
+            const participant = session.acceptedParticipants.get(userId);
             if (typeof isCameraOn === 'boolean') participant.isCameraOn = isCameraOn;
             if (typeof isMicOn === 'boolean') participant.isMicOn = isMicOn;
             if (typeof isHandRaised === 'boolean') participant.isHandRaised = isHandRaised;
@@ -269,8 +452,8 @@ const initSocket = (server) => {
 // Helper to remove participant and broadcast leave
 const handleUserLeaveMeeting = (socket, meetingId) => {
     try {
-        const meetingMap = meetingSessions.get(meetingId);
-        if (!meetingMap) return;
+        const session = meetingSessions.get(meetingId);
+        if (!session) return;
 
         let leftUserId = null;
         let leftUserName = null;
@@ -279,42 +462,68 @@ const handleUserLeaveMeeting = (socket, meetingId) => {
             leftUserId = socket.user._id.toString();
             leftUserName = socket.user.name;
         } else {
-            // Find by socketId
-            for (const [uid, p] of meetingMap.entries()) {
+            // Find by socketId in acceptedParticipants
+            for (const [uid, p] of session.acceptedParticipants.entries()) {
                 if (p.socketId === socket.id) {
                     leftUserId = uid;
                     leftUserName = p.name;
                     break;
                 }
             }
+            // Or find by socketId in waitingRequests
+            if (!leftUserId) {
+                for (const [uid, r] of session.waitingRequests.entries()) {
+                    if (r.socketId === socket.id) {
+                        leftUserId = uid;
+                        leftUserName = r.name;
+                        break;
+                    }
+                }
+            }
         }
 
-        if (leftUserId && meetingMap.has(leftUserId)) {
-            meetingMap.delete(leftUserId);
-            socket.leave(`meeting_${meetingId}`);
+        if (!leftUserId) return;
 
-            const remaining = Array.from(meetingMap.values());
+        const roomName = `meeting_${meetingId}`;
+
+        // 1. If in waitingRequests:
+        if (session.waitingRequests.has(leftUserId)) {
+            session.waitingRequests.delete(leftUserId);
+            socket.leave(`waiting_${meetingId}`);
+            io.to(roomName).emit('waiting_requests_updated', {
+                meetingId,
+                waitingRequests: Array.from(session.waitingRequests.values()),
+            });
+            console.log(`[Meeting ${meetingId}]: Student "${leftUserName}" left waiting room.`);
+        }
+
+        // 2. If in acceptedParticipants:
+        if (session.acceptedParticipants.has(leftUserId)) {
+            session.acceptedParticipants.delete(leftUserId);
+            socket.leave(roomName);
+
+            const remaining = Array.from(session.acceptedParticipants.values());
             const count = remaining.length;
 
-            io.to(`meeting_${meetingId}`).emit('participant_left', {
+            io.to(roomName).emit('participant_left', {
                 meetingId,
                 userId: leftUserId,
                 name: leftUserName,
                 participantCount: count,
             });
 
-            io.to(`meeting_${meetingId}`).emit('participant_count_updated', {
+            io.to(roomName).emit('participant_count_updated', {
                 meetingId,
                 participantCount: count,
             });
 
-            console.log(`[Meeting ${meetingId}]: User "${leftUserName}" left. Remaining: ${count}`);
+            console.log(`[Meeting ${meetingId}]: Admitted user "${leftUserName}" left. Remaining: ${count}`);
+        }
 
-            // Clean up empty meeting room
-            if (count === 0) {
-                meetingSessions.delete(meetingId);
-                console.log(`[Meeting ${meetingId}]: Room empty, session cleared.`);
-            }
+        // 3. Clean up empty session
+        if (session.acceptedParticipants.size === 0 && session.waitingRequests.size === 0) {
+            meetingSessions.delete(meetingId);
+            console.log(`[Meeting ${meetingId}]: Room empty, session cleared.`);
         }
     } catch (err) {
         console.error('handleUserLeaveMeeting error:', err);
@@ -324,9 +533,9 @@ const handleUserLeaveMeeting = (socket, meetingId) => {
 const getIO = () => io;
 
 const getActiveMeetingParticipants = (meetingId) => {
-    const meetingMap = meetingSessions.get(meetingId);
-    if (!meetingMap) return [];
-    return Array.from(meetingMap.values());
+    const session = meetingSessions.get(meetingId);
+    if (!session) return [];
+    return Array.from(session.acceptedParticipants.values());
 };
 
 module.exports = { initSocket, getIO, getActiveMeetingParticipants };

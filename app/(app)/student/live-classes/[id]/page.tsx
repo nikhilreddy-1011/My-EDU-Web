@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     Video, Mic, MicOff, VideoOff, ScreenShare, MessageSquare, Users,
@@ -10,31 +10,40 @@ import {
     Monitor, PenLine, BarChart2, Smile, Volume2, VolumeX, Grid3x3,
     Rows, Copy, Bell, MoreVertical, MicOff as MuteIcon, UserX, Star,
     Radio, Download, FileText, Shield, CheckCircle2, AlertTriangle,
-    Sliders, RefreshCw
+    Sliders, RefreshCw, UserCheck
 } from 'lucide-react'
-import { liveClasses } from '@/data/mock-data'
-import { getLiveClassById } from '@/lib/api/live-classes'
+import { getLiveClassById, checkLiveClassAccess } from '@/lib/api/live-classes'
 import { useAuthStore } from '@/store/use-auth-store'
+import { connectSocket, getSocket } from '@/lib/socket'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useMediaStream } from '@/hooks/use-media-stream'
 import { DeviceSettingsModal } from '@/components/live-class/device-settings-modal'
 
-// ── Mock Participants ─────────────────────────────────────────
-const MOCK_PARTICIPANTS = [
-    { id: '1', name: 'Rohit Verma',   initials: 'RV', isMuted: true,  isVideoOff: false, isHandRaised: false, color: '#6366f1' },
-    { id: '2', name: 'Ananya Singh',  initials: 'AS', isMuted: false, isVideoOff: false, isHandRaised: true,  color: '#ec4899' },
-    { id: '3', name: 'Karan Patel',   initials: 'KP', isMuted: true,  isVideoOff: true,  isHandRaised: false, color: '#10b981' },
-    { id: '4', name: 'Meera Krishnan',initials: 'MK', isMuted: false, isVideoOff: false, isHandRaised: false, color: '#f59e0b' },
-    { id: '5', name: 'Dev Shah',      initials: 'DS', isMuted: true,  isVideoOff: false, isHandRaised: false, color: '#8b5cf6' },
-]
+export interface MeetingParticipant {
+    id: string
+    userId: string
+    name: string
+    avatar?: string
+    role: string
+    isTeacher: boolean
+    isCameraOn: boolean
+    isMicOn: boolean
+    isHandRaised: boolean
+    color: string
+    initials: string
+    joinedAt?: string | Date
+}
 
-const INIT_MESSAGES = [
-    { id: 1, user: 'Ananya Singh',  msg: 'Can you explain the useCallback hook again?', time: '2:15 PM', isHost: false },
-    { id: 2, user: 'Karan Patel',   msg: 'Great explanation! Much clearer now 🙌',       time: '2:17 PM', isHost: false },
-    { id: 3, user: 'Meera Krishnan',msg: 'Can we see the demo one more time?',           time: '2:18 PM', isHost: false },
-    { id: 4, user: 'Dr. Arjun Mehta', msg: 'Sure! Sharing my screen now.',               time: '2:19 PM', isHost: true },
-]
+export interface MeetingChatMessage {
+    id: string | number
+    userId?: string
+    user: string
+    role?: string
+    isHost: boolean
+    msg: string
+    time: string
+}
 
 const EMOJIS = ['👍','👏','❤️','😂','🔥','🤔','🙌','✅']
 
@@ -47,16 +56,59 @@ const POLL_OPTIONS = [
 // ── Main Component ────────────────────────────────────────────
 export default function LiveMeetingPage() {
     const { id } = useParams<{ id: string }>()
+    const router = useRouter()
     const user = useAuthStore(state => state.user)
-    const isTeacher = user?.role === 'TEACHER'
-    const [liveClass, setLiveClass] = useState<any>(() => {
-        return liveClasses.find(lc => lc.id === id || (lc as any).meetingId === id) || liveClasses[1]
+    const token = useAuthStore(state => state.token)
+    const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN'
+    const currentUserId = (user as any)?._id || user?.id
+
+    const [liveClass, setLiveClass] = useState<any>({
+        id: id || '',
+        meetingId: id || '',
+        title: 'Loading Live Class...',
+        description: '',
+        course: { id: '', title: 'Live Session', category: 'Workshop' },
+        instructor: { name: 'Instructor', avatar: '', title: 'Instructor' },
+        scheduledAt: new Date().toISOString(),
+        duration: 60,
+        status: 'LIVE',
+        attendeesCount: 0,
+        maxAttendees: 500,
+        meetingUrl: '',
+        tags: [],
     })
 
+    // Real Participant Session List (strictly real users connected to this room)
+    const [participants, setParticipants] = useState<MeetingParticipant[]>([])
+    const [messages, setMessages] = useState<MeetingChatMessage[]>([])
+    const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null)
+    const [authLoading, setAuthLoading] = useState(true)
+
+    // Load Live Class and Verify Course Access Control
     useEffect(() => {
         if (!id) return
-        getLiveClassById(id)
-            .then(res => {
+
+        let isMounted = true
+
+        const verifyAndLoad = async () => {
+            try {
+                // 1. Check access control on backend
+                const accessRes = await checkLiveClassAccess(id, token)
+                if (!isMounted) return
+
+                if (!accessRes.authorized) {
+                    setIsAuthorized(false)
+                    toast.error(accessRes.message || 'Access denied. You do not have permission to join this live class.')
+                    router.push(isTeacher ? '/teacher/live-classes' : '/student/live-classes')
+                    return
+                }
+
+                setIsAuthorized(true)
+
+                // 2. Fetch full class details
+                const res = await getLiveClassById(id)
+                if (!isMounted) return
+
                 if (res.success && res.liveClass) {
                     const lc = res.liveClass
                     setLiveClass({
@@ -84,11 +136,24 @@ export default function LiveMeetingPage() {
                         tags: lc.tags || [],
                     })
                 }
-            })
-            .catch(() => {})
-    }, [id])
+            } catch (err: any) {
+                if (!isMounted) return
+                const errMsg = err?.message || 'Unable to join live class.'
+                toast.error(errMsg)
+                router.push(isTeacher ? '/teacher/live-classes' : '/student/live-classes')
+            } finally {
+                if (isMounted) setAuthLoading(false)
+            }
+        }
 
-    // Real Media Engine
+        verifyAndLoad()
+
+        return () => {
+            isMounted = false
+        }
+    }, [id, token, router, isTeacher])
+
+    // Real Media Engine (Camera, Mic, Screen Share)
     const {
         localStream,
         screenStream,
@@ -121,7 +186,6 @@ export default function LiveMeetingPage() {
 
     // Chat
     const [chatInput,      setChatInput]      = useState('')
-    const [messages,       setMessages]       = useState(INIT_MESSAGES)
     const [unreadCount,    setUnreadCount]    = useState(0)
     const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -143,6 +207,127 @@ export default function LiveMeetingPage() {
         return () => clearInterval(t)
     }, [])
 
+    // ── Socket.IO Real-time Meeting Connection ────────────────────
+    useEffect(() => {
+        if (!id || isAuthorized !== true || !user) return
+
+        const socket = connectSocket()
+
+        // 1. Join Meeting Room
+        socket.emit('join_meeting', {
+            meetingId: id,
+            isCameraOn,
+            isMicOn,
+            isHandRaised,
+            token,
+        })
+
+        // 2. Room State: Received full list of currently connected participants
+        const handleMeetingState = (data: { meetingId: string; participants: MeetingParticipant[] }) => {
+            if (data.meetingId === id && Array.isArray(data.participants)) {
+                setParticipants(data.participants)
+            }
+        }
+
+        // 3. New participant joined the room
+        const handleParticipantJoined = (data: { meetingId: string; participant: MeetingParticipant }) => {
+            if (data.meetingId === id && data.participant) {
+                setParticipants(prev => {
+                    const filtered = prev.filter(p => p.userId !== data.participant.userId && p.id !== data.participant.id)
+                    return [...filtered, data.participant]
+                })
+                toast.info(`${data.participant.name} joined the meeting`)
+            }
+        }
+
+        // 4. Participant left or disconnected
+        const handleParticipantLeft = (data: { meetingId: string; userId: string; name?: string }) => {
+            if (data.meetingId === id && data.userId) {
+                setParticipants(prev => prev.filter(p => p.userId !== data.userId && p.id !== data.userId))
+                if (data.name) {
+                    toast(`${data.name} left the meeting`, { duration: 2000 })
+                }
+            }
+        }
+
+        // 5. Participant media status changed (mic / camera / hand)
+        const handleMediaUpdated = (data: { meetingId: string; userId: string; isCameraOn?: boolean; isMicOn?: boolean; isHandRaised?: boolean }) => {
+            if (data.meetingId === id && data.userId) {
+                setParticipants(prev => prev.map(p => {
+                    if (p.userId === data.userId || p.id === data.userId) {
+                        return {
+                            ...p,
+                            ...(typeof data.isCameraOn === 'boolean' ? { isCameraOn: data.isCameraOn } : {}),
+                            ...(typeof data.isMicOn === 'boolean' ? { isMicOn: data.isMicOn } : {}),
+                            ...(typeof data.isHandRaised === 'boolean' ? { isHandRaised: data.isHandRaised } : {}),
+                        }
+                    }
+                    return p
+                }))
+            }
+        }
+
+        // 6. Real-time chat message received
+        const handleChatMessage = (data: { meetingId: string; message: MeetingChatMessage }) => {
+            if (data.meetingId === id && data.message) {
+                setMessages(prev => [...prev, data.message])
+            }
+        }
+
+        // 7. Reaction emoji received
+        const handleReaction = (data: { meetingId: string; emoji: string; user: string }) => {
+            if (data.meetingId === id && data.emoji) {
+                toast(`${data.user}: ${data.emoji} ${data.emoji}`, { duration: 1500 })
+            }
+        }
+
+        socket.on('meeting_state', handleMeetingState)
+        socket.on('participant_joined', handleParticipantJoined)
+        socket.on('participant_left', handleParticipantLeft)
+        socket.on('participant_media_updated', handleMediaUpdated)
+        socket.on('meeting_chat_message', handleChatMessage)
+        socket.on('meeting_reaction', handleReaction)
+
+        return () => {
+            socket.emit('leave_meeting', { meetingId: id })
+            socket.off('meeting_state', handleMeetingState)
+            socket.off('participant_joined', handleParticipantJoined)
+            socket.off('participant_left', handleParticipantLeft)
+            socket.off('participant_media_updated', handleMediaUpdated)
+            socket.off('meeting_chat_message', handleChatMessage)
+            socket.off('meeting_reaction', handleReaction)
+        }
+    }, [id, isAuthorized, user, token])
+
+    // Broadcast local media changes to room
+    const handleToggleMic = async () => {
+        const nextState = !isMicOn
+        await toggleMic()
+        const socket = getSocket()
+        if (socket && socket.connected) {
+            socket.emit('meeting_media_toggle', { meetingId: id, isMicOn: nextState })
+        }
+    }
+
+    const handleToggleCamera = async () => {
+        const nextState = !isCameraOn
+        await toggleCamera()
+        const socket = getSocket()
+        if (socket && socket.connected) {
+            socket.emit('meeting_media_toggle', { meetingId: id, isCameraOn: nextState })
+        }
+    }
+
+    const handleToggleHand = () => {
+        const nextState = !isHandRaised
+        setIsHandRaised(nextState)
+        toast(nextState ? '✋ Hand raised!' : 'Hand lowered')
+        const socket = getSocket()
+        if (socket && socket.connected) {
+            socket.emit('meeting_media_toggle', { meetingId: id, isHandRaised: nextState })
+        }
+    }
+
     // Auto-scroll chat
     useEffect(() => {
         if (sidePanel === 'chat') chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -150,17 +335,26 @@ export default function LiveMeetingPage() {
 
     // Unread badge
     useEffect(() => {
-        if (sidePanel !== 'chat') setUnreadCount(c => c + 1)
+        if (sidePanel !== 'chat' && messages.length > 0) {
+            setUnreadCount(c => c + 1)
+        }
     }, [messages.length, sidePanel])
 
     const sendMsg = (e: React.FormEvent) => {
         e.preventDefault()
         if (!chatInput.trim()) return
-        setMessages(m => [...m, {
-            id: Date.now(), user: user?.name || 'You', msg: chatInput,
-            time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-            isHost: isTeacher,
-        }])
+        const socket = getSocket()
+        if (socket && socket.connected) {
+            socket.emit('meeting_chat', { meetingId: id, text: chatInput.trim() })
+        } else {
+            setMessages(m => [...m, {
+                id: Date.now(),
+                user: user?.name || 'You',
+                msg: chatInput.trim(),
+                time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                isHost: isTeacher,
+            }])
+        }
         setChatInput('')
     }
 
@@ -173,6 +367,10 @@ export default function LiveMeetingPage() {
     const sendReaction = (emoji: string) => {
         setShowReactions(false)
         toast(emoji + ' ' + emoji + ' ' + emoji, { duration: 1500 })
+        const socket = getSocket()
+        if (socket && socket.connected) {
+            socket.emit('meeting_reaction', { meetingId: id, emoji })
+        }
     }
 
     const handleVote = (optId: string) => {
@@ -222,6 +420,30 @@ export default function LiveMeetingPage() {
     const secs = elapsed % 60
     const totalVotes = pollOptions.reduce((s, o) => s + o.votes, 0)
 
+    // Active Connected Participants Breakdown
+    // Current user is always represented by YourTile
+    const otherParticipants = participants.filter(
+        p => p.userId !== currentUserId && p.id !== currentUserId
+    )
+
+    // Online host/teacher (if connected to this meeting)
+    const activeHost = participants.find(p => p.isTeacher)
+
+    // Real dynamic participant count (self + actually connected peers)
+    const realParticipantCount = Math.max(1, participants.length)
+
+    // Students list for people drawer
+    const connectedStudents = participants.filter(p => !p.isTeacher)
+
+    if (authLoading) {
+        return (
+            <div className="h-screen bg-slate-950 flex flex-col items-center justify-center text-slate-100 font-sans gap-4">
+                <RefreshCw size={32} className="animate-spin text-primary" />
+                <p className="text-sm text-slate-400">Verifying live class access & connecting to room...</p>
+            </div>
+        )
+    }
+
     return (
         <div className="h-screen bg-slate-950 flex flex-col text-slate-100 overflow-hidden select-none font-sans">
 
@@ -235,7 +457,18 @@ export default function LiveMeetingPage() {
                     <div className="w-px h-4 bg-slate-800" />
                     <div>
                         <p className="font-semibold text-sm truncate max-w-[200px] sm:max-w-sm text-slate-100">{liveClass.title}</p>
-                        <p className="text-xs text-slate-400">{liveClass.instructor.name}</p>
+                        <p className="text-xs text-slate-400 flex items-center gap-1.5">
+                            <span>{liveClass.instructor.name}</span>
+                            {activeHost ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium bg-emerald-500/10 px-1.5 py-0.2 rounded-full border border-emerald-500/30">
+                                    ● Teacher Online
+                                </span>
+                            ) : (
+                                <span className="text-[10px] text-slate-500 italic">
+                                    (Teacher not in room)
+                                </span>
+                            )}
+                        </p>
                     </div>
                 </div>
 
@@ -253,8 +486,12 @@ export default function LiveMeetingPage() {
                     <span className="text-xs font-mono text-slate-300 bg-slate-800/80 px-2.5 py-1 rounded-lg tabular-nums border border-slate-700/50">
                         {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
                     </span>
-                    <span className="text-xs text-slate-400 hidden sm:flex items-center gap-1 bg-slate-800/40 px-2 py-1 rounded-lg">
-                        <Users size={12} />{MOCK_PARTICIPANTS.length + 2}
+
+                    {/* DYNAMIC REAL PARTICIPANT COUNTER */}
+                    <span className="text-xs text-slate-300 flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/50 font-medium">
+                        <Users size={13} className="text-primary" />
+                        <span>{realParticipantCount}</span>
+                        <span className="text-[10px] text-slate-400 hidden sm:inline">{realParticipantCount === 1 ? 'person' : 'people'}</span>
                     </span>
 
                     {/* Layout toggle */}
@@ -320,9 +557,8 @@ export default function LiveMeetingPage() {
                                 isHandRaised={isHandRaised}
                                 compact
                             />
-                            <HostTile liveClass={liveClass} isTeacher={isTeacher} compact />
-                            {MOCK_PARTICIPANTS.map((p, i) => (
-                                <ParticipantTile key={p.id} p={p} index={i} compact />
+                            {otherParticipants.map((p, i) => (
+                                <ParticipantTile key={p.id || p.userId} p={p} index={i} compact />
                             ))}
                         </div>
                     </div>
@@ -331,44 +567,88 @@ export default function LiveMeetingPage() {
                     <div className={cn(
                         'flex-1 p-3 overflow-auto',
                         layout === 'spotlight' ? 'flex flex-col gap-3' : 'grid gap-3',
-                        layout === 'grid' && 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                        layout === 'grid' && (
+                            otherParticipants.length === 0
+                                ? 'grid-cols-1 md:grid-cols-2'
+                                : otherParticipants.length === 1
+                                ? 'grid-cols-1 sm:grid-cols-2'
+                                : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                        )
                     )} style={{ gridAutoRows: '1fr' }}>
 
-                        {layout === 'spotlight' ? (
-                            <>
-                                <HostTile liveClass={liveClass} isTeacher={isTeacher} className="flex-1 min-h-[60%]" />
-                                <div className="h-32 flex gap-2 overflow-x-auto pb-1">
-                                    <YourTile
-                                        user={user}
-                                        localStream={localStream}
-                                        isCameraOn={isCameraOn}
-                                        isMicOn={isMicOn}
-                                        audioLevel={audioLevel}
-                                        isSpeaking={isSpeaking}
-                                        isHandRaised={isHandRaised}
-                                        compact
-                                    />
-                                    {MOCK_PARTICIPANTS.map((p, i) => (
-                                        <ParticipantTile key={p.id} p={p} index={i} compact />
-                                    ))}
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                <HostTile liveClass={liveClass} isTeacher={isTeacher} />
-                                <YourTile
-                                    user={user}
-                                    localStream={localStream}
-                                    isCameraOn={isCameraOn}
-                                    isMicOn={isMicOn}
-                                    audioLevel={audioLevel}
-                                    isSpeaking={isSpeaking}
-                                    isHandRaised={isHandRaised}
+                        {/* Local User Tile */}
+                        <YourTile
+                            user={user}
+                            localStream={localStream}
+                            isCameraOn={isCameraOn}
+                            isMicOn={isMicOn}
+                            audioLevel={audioLevel}
+                            isSpeaking={isSpeaking}
+                            isHandRaised={isHandRaised}
+                        />
+
+                        {/* Connected Remote Participants (Only Real Connected Users!) */}
+                        {otherParticipants.map((p, i) => (
+                            p.isTeacher ? (
+                                <HostTile
+                                    key={p.id || p.userId}
+                                    participant={p}
+                                    liveClass={liveClass}
                                 />
-                                {MOCK_PARTICIPANTS.map((p, i) => (
-                                    <ParticipantTile key={p.id} p={p} index={i} isTeacher={isTeacher} />
-                                ))}
-                            </>
+                            ) : (
+                                <ParticipantTile
+                                    key={p.id || p.userId}
+                                    p={p}
+                                    index={i}
+                                    isTeacher={isTeacher}
+                                />
+                            )
+                        ))}
+
+                        {/* Empty Waiting State when alone in the meeting */}
+                        {otherParticipants.length === 0 && (
+                            <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-6 flex flex-col items-center justify-center text-center gap-3 min-h-[200px]">
+                                {isTeacher ? (
+                                    <>
+                                        <div className="w-12 h-12 rounded-2xl bg-primary/15 border border-primary/30 text-primary flex items-center justify-center shadow-inner">
+                                            <Users size={24} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-slate-100">Waiting for students to join...</h3>
+                                            <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                                                You are the host of this class. Once your enrolled students join, their video tiles will appear here automatically.
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                if (typeof window !== 'undefined') {
+                                                    navigator.clipboard.writeText(window.location.href)
+                                                    toast.success('Meeting link copied to clipboard! 📋')
+                                                }
+                                            }}
+                                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition-colors shadow-sm"
+                                        >
+                                            <Copy size={13} /> Copy Class Invite Link
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center animate-pulse shadow-inner">
+                                            <Radio size={24} />
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-slate-100">Waiting for instructor or classmates...</h3>
+                                            <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                                                You are connected to this live room. As soon as the teacher or other students enter, they will appear here in real time.
+                                            </p>
+                                        </div>
+                                        <div className="inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                            Live Session Ready
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                         )}
                     </div>
                 )}
@@ -398,6 +678,8 @@ export default function LiveMeetingPage() {
                                             <span className="flex items-center justify-center gap-1">
                                                 Chat <span className="w-4 h-4 bg-accent rounded-full text-white text-xs flex items-center justify-center">{unreadCount}</span>
                                             </span>
+                                        ) : p === 'people' ? (
+                                            `People (${realParticipantCount})`
                                         ) : p.charAt(0).toUpperCase() + p.slice(1)}
                                     </button>
                                 ))}
@@ -410,21 +692,29 @@ export default function LiveMeetingPage() {
                             {sidePanel === 'chat' && (
                                 <>
                                     <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                                        {messages.map(m => (
-                                            <div key={m.id} className={cn('flex flex-col gap-0.5', m.user === (user?.name || 'You') && 'items-end')}>
-                                                <div className="flex items-center gap-1.5">
-                                                    {m.isHost && <Shield size={10} className="text-yellow-400" />}
-                                                    <span className="text-xs text-slate-400">{m.user}</span>
-                                                    <span className="text-xs text-slate-600">{m.time}</span>
-                                                </div>
-                                                <div className={cn(
-                                                    'text-sm rounded-2xl px-3 py-2 max-w-[85%]',
-                                                    m.user === (user?.name || 'You') ? 'bg-primary text-white rounded-br-sm' : 'bg-slate-800 text-slate-100 rounded-bl-sm'
-                                                )}>
-                                                    {m.msg}
-                                                </div>
+                                        {messages.length === 0 ? (
+                                            <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-500">
+                                                <MessageSquare size={32} className="opacity-30 mb-2" />
+                                                <p className="text-xs">No messages yet in this session.</p>
+                                                <p className="text-[11px] text-slate-600 mt-1">Say hello to everyone!</p>
                                             </div>
-                                        ))}
+                                        ) : (
+                                            messages.map(m => (
+                                                <div key={m.id} className={cn('flex flex-col gap-0.5', m.user === (user?.name || 'You') && 'items-end')}>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {m.isHost && <Shield size={10} className="text-yellow-400" />}
+                                                        <span className="text-xs text-slate-400">{m.user}</span>
+                                                        <span className="text-xs text-slate-600">{m.time}</span>
+                                                    </div>
+                                                    <div className={cn(
+                                                        'text-sm rounded-2xl px-3 py-2 max-w-[85%]',
+                                                        m.user === (user?.name || 'You') ? 'bg-primary text-white rounded-br-sm' : 'bg-slate-800 text-slate-100 rounded-bl-sm'
+                                                    )}>
+                                                        {m.msg}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
                                         <div ref={chatEndRef} />
                                     </div>
                                     <form onSubmit={sendMsg} className="p-3 border-t border-slate-800 flex gap-2 flex-shrink-0">
@@ -442,46 +732,71 @@ export default function LiveMeetingPage() {
                                 </>
                             )}
 
-                            {/* People Panel */}
+                            {/* People Panel (Real Connected Users Only) */}
                             {sidePanel === 'people' && (
                                 <div className="flex-1 overflow-y-auto">
-                                    <div className="px-3 py-2 text-xs text-slate-500 uppercase tracking-wider font-semibold">Host</div>
-                                    <div className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-slate-800/60 transition-colors">
-                                        <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-sm font-bold flex-shrink-0 text-white">
-                                            {liveClass.instructor.name.charAt(0)}
-                                        </div>
-                                        <div className="flex-1">
-                                            <p className="text-sm font-medium">{liveClass.instructor.name}</p>
-                                            <p className="text-xs text-yellow-400">Host</p>
-                                        </div>
-                                        <Mic size={14} className="text-slate-400" />
-                                    </div>
-
-                                    <div className="px-3 py-2 text-xs text-slate-500 uppercase tracking-wider font-semibold border-t border-slate-800 mt-1">
-                                        Participants ({MOCK_PARTICIPANTS.length + 1})
-                                    </div>
-                                    {MOCK_PARTICIPANTS.map(p => (
-                                        <div key={p.id} className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-slate-800/60 transition-colors group">
-                                            <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 text-white" style={{ background: p.color }}>
-                                                {p.initials}
+                                    <div className="px-3 py-2 text-xs text-slate-500 uppercase tracking-wider font-semibold">Host / Instructor</div>
+                                    {activeHost ? (
+                                        <div className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-slate-800/60 transition-colors">
+                                            <div className="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-sm font-bold flex-shrink-0 text-white">
+                                                {activeHost.initials}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-sm">{p.name}</p>
-                                                {p.isHandRaised && <p className="text-xs text-yellow-400">✋ Hand raised</p>}
+                                                <p className="text-sm font-medium truncate">
+                                                    {activeHost.name} {activeHost.userId === currentUserId && '(You)'}
+                                                </p>
+                                                <p className="text-xs text-yellow-400 flex items-center gap-1">
+                                                    <Shield size={10} /> Host
+                                                </p>
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                {p.isMuted ? <MicOff size={13} className="text-red-400" /> : <Mic size={13} className="text-slate-400" />}
-                                            </div>
+                                            {activeHost.isMicOn ? (
+                                                <Mic size={14} className="text-emerald-400" />
+                                            ) : (
+                                                <MicOff size={14} className="text-red-400" />
+                                            )}
                                         </div>
-                                    ))}
+                                    ) : (
+                                        <div className="flex items-center gap-2.5 px-3 py-2.5 text-slate-500 text-xs italic">
+                                            <span>{liveClass.instructor.name}</span>
+                                            <span className="text-[10px] bg-slate-800 px-2 py-0.5 rounded-full">(Offline)</span>
+                                        </div>
+                                    )}
 
-                                    {/* You */}
-                                    <div className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-800/40 border-t border-slate-800">
-                                        <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-bold flex-shrink-0 text-white">
-                                            {(user?.name || 'Y').charAt(0)}
+                                    <div className="px-3 py-2 text-xs text-slate-500 uppercase tracking-wider font-semibold border-t border-slate-800 mt-1 flex items-center justify-between">
+                                        <span>Students Connected</span>
+                                        <span className="text-primary font-mono">{connectedStudents.length}</span>
+                                    </div>
+
+                                    {connectedStudents.length === 0 ? (
+                                        <div className="px-3 py-4 text-xs text-slate-500 italic text-center">
+                                            No students currently connected
                                         </div>
-                                        <div className="flex-1">
-                                            <p className="text-sm font-medium">{user?.name || 'You'} (You)</p>
+                                    ) : (
+                                        connectedStudents.map(p => (
+                                            <div key={p.id || p.userId} className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-slate-800/60 transition-colors group">
+                                                <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 text-white" style={{ background: p.color }}>
+                                                    {p.initials}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm truncate">
+                                                        {p.name} {p.userId === currentUserId && '(You)'}
+                                                    </p>
+                                                    {p.isHandRaised && <p className="text-xs text-yellow-400">✋ Hand raised</p>}
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    {p.isMicOn ? <Mic size={13} className="text-emerald-400" /> : <MicOff size={13} className="text-red-400" />}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+
+                                    {/* You (Quick indicator) */}
+                                    <div className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-800/40 border-t border-slate-800 mt-2">
+                                        <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-sm font-bold flex-shrink-0 text-white">
+                                            {(user?.name || 'Y').charAt(0).toUpperCase()}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium truncate">{user?.name || 'You'} (You)</p>
                                             <p className="text-[11px] text-slate-400">{isCameraOn ? '📹 Camera on' : 'Camera off'}</p>
                                         </div>
                                         {isMicOn ? (
@@ -610,13 +925,13 @@ export default function LiveMeetingPage() {
                     <CtrlBtn
                         active={isMicOn}
                         danger={!isMicOn}
-                        onClick={toggleMic}
+                        onClick={handleToggleMic}
                         icon={!isMicOn ? <MicOff size={18} /> : <Mic size={18} />}
                         label={!isMicOn ? 'Unmute' : 'Mute'}
                     />
                     <CtrlBtn
                         active={isCameraOn}
-                        onClick={toggleCamera}
+                        onClick={handleToggleCamera}
                         icon={!isCameraOn ? <VideoOff size={18} /> : <Video size={18} />}
                         label={!isCameraOn ? 'Start Video' : 'Stop Video'}
                     />
@@ -641,7 +956,7 @@ export default function LiveMeetingPage() {
                     />
                     <CtrlBtn
                         active={isHandRaised}
-                        onClick={() => { setIsHandRaised(h => !h); toast(isHandRaised ? 'Hand lowered' : '✋ Hand raised!') }}
+                        onClick={handleToggleHand}
                         icon={<Hand size={18} />}
                         label="Raise Hand"
                     />
@@ -663,6 +978,7 @@ export default function LiveMeetingPage() {
                         onClick={() => openPanel('people')}
                         icon={<Users size={18} />}
                         label="People"
+                        badge={realParticipantCount > 1 ? String(realParticipantCount) : undefined}
                     />
                     <CtrlBtn
                         active={sidePanel === 'whiteboard'}
@@ -688,17 +1004,23 @@ export default function LiveMeetingPage() {
                 </div>
 
                 {/* Right: Leave Meeting */}
-                <Link href={isTeacher ? '/teacher/live-classes' : '/student/live-classes'}>
-                    <div className="flex flex-col items-center gap-0.5">
-                        <button
-                            onClick={() => toast('Left the meeting')}
-                            className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-colors shadow-lg"
-                        >
-                            <PhoneOff size={20} />
-                        </button>
-                        <span className="text-xs text-slate-400 hidden sm:block">Leave</span>
-                    </div>
-                </Link>
+                <div className="flex flex-col items-center gap-0.5">
+                    <button
+                        onClick={() => {
+                            const socket = getSocket()
+                            if (socket && socket.connected) {
+                                socket.emit('leave_meeting', { meetingId: id })
+                            }
+                            toast('Left the meeting')
+                            router.push(isTeacher ? '/teacher/live-classes' : '/student/live-classes')
+                        }}
+                        className="w-12 h-12 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-colors shadow-lg active:scale-95"
+                        title="Leave Live Meeting"
+                    >
+                        <PhoneOff size={20} />
+                    </button>
+                    <span className="text-xs text-slate-400 hidden sm:block">Leave</span>
+                </div>
             </div>
 
             {/* ── Audio & Video Device Settings Modal ─────────── */}
@@ -714,8 +1036,8 @@ export default function LiveMeetingPage() {
                 isMicOn={isMicOn}
                 localStream={localStream}
                 audioLevel={audioLevel}
-                onToggleCamera={toggleCamera}
-                onToggleMic={toggleMic}
+                onToggleCamera={handleToggleCamera}
+                onToggleMic={handleToggleMic}
                 onRefreshDevices={refreshDevices}
             />
         </div>
@@ -824,17 +1146,21 @@ function YourTile({
         }
     }, [localStream, isCameraOn])
 
+    const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN'
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2 }}
+            transition={{ delay: 0.1 }}
             className={cn(
                 'relative rounded-2xl overflow-hidden flex items-center justify-center border-2 transition-all flex-shrink-0 bg-slate-900',
                 isSpeaking
                     ? 'border-emerald-400 ring-2 ring-emerald-400/40 shadow-[0_0_20px_rgba(52,211,153,0.35)]'
-                    : 'border-primary/60',
-                compact ? 'w-full md:w-auto h-32' : 'min-h-[160px]'
+                    : isTeacher
+                    ? 'border-indigo-500/70'
+                    : 'border-slate-800',
+                compact ? 'w-full md:w-auto h-32' : 'min-h-[180px]'
             )}
         >
             {/* Live Camera Feed */}
@@ -861,10 +1187,15 @@ function YourTile({
             )}
 
             {/* Bottom info badge */}
-            <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-200 flex items-center gap-1.5 shadow-xs">
+            <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-[11px] font-medium text-slate-200 flex items-center gap-1.5 shadow-xs">
                 <span>{user?.name || 'You'} (You)</span>
+                {isTeacher && (
+                    <span className="text-[9px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-1.5 py-0.2 rounded font-semibold">
+                        Host
+                    </span>
+                )}
                 {isSpeaking && (
-                    <span className="flex items-center gap-0.5">
+                    <span className="flex items-center gap-0.5 ml-1">
                         <span className="w-1 h-2 bg-emerald-400 rounded-full animate-bounce" />
                         <span className="w-1 h-3 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.15s]" />
                         <span className="w-1 h-1.5 bg-emerald-400 rounded-full animate-bounce [animation-delay:0.3s]" />
@@ -895,52 +1226,60 @@ function YourTile({
     )
 }
 
-// ── Host Tile Component ───────────────────────────────────────
+// ── Host Tile Component (Displays Real Online Teacher) ────────
 
 function HostTile({
+    participant,
     liveClass,
-    isTeacher,
     className,
     compact,
 }: {
-    liveClass: typeof liveClasses[0]
-    isTeacher: boolean
+    participant?: MeetingParticipant
+    liveClass: any
     className?: string
     compact?: boolean
 }) {
+    const hostName = participant?.name || liveClass.instructor?.name || 'Instructor'
+    const initials = participant?.initials || hostName.slice(0, 2).toUpperCase()
+    const isMicOn = participant?.isMicOn ?? true
+    const isCameraOn = participant?.isCameraOn ?? false
+
     return (
         <motion.div
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             className={cn(
-                'relative bg-slate-900 rounded-2xl overflow-hidden flex items-center justify-center border-2 border-primary/50 shadow-md',
-                compact ? 'w-full md:w-auto h-32' : 'min-h-[160px]',
+                'relative bg-slate-900 rounded-2xl overflow-hidden flex items-center justify-center border-2 border-indigo-500/60 shadow-md',
+                compact ? 'w-full md:w-auto h-32' : 'min-h-[180px]',
                 className
             )}
         >
             <div className="flex flex-col items-center gap-2 p-3">
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-primary to-blue-600 flex items-center justify-center text-2xl font-bold text-white shadow-lg">
-                    {liveClass.instructor.name.charAt(0)}
+                    {initials}
                 </div>
-                <p className="text-sm font-semibold text-slate-100">{liveClass.instructor.name}</p>
-                <span className="text-[10px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-2 py-0.5 rounded-full font-medium">
-                    Instructor (Host)
+                <p className="text-sm font-semibold text-slate-100">{hostName}</p>
+                <span className="text-[10px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                    <Shield size={10} /> Instructor (Host)
                 </span>
             </div>
 
             <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded-md text-[11px] font-medium text-slate-200">
-                {liveClass.instructor.name.split(' ')[0]} (Host)
+                {hostName.split(' ')[0]} (Host)
             </div>
             <div className="absolute bottom-2 right-2 flex gap-1">
-                <div className="w-6 h-6 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center">
-                    <Mic size={11} />
+                <div className={cn(
+                    'w-6 h-6 rounded-full flex items-center justify-center shadow-xs',
+                    isMicOn ? 'bg-emerald-600/90 text-white' : 'bg-red-600/90 text-white'
+                )}>
+                    {isMicOn ? <Mic size={11} /> : <MicOff size={11} />}
                 </div>
             </div>
         </motion.div>
     )
 }
 
-// ── Other Participants Tile Component ─────────────────────────
+// ── Connected Student Tile Component ──────────────────────────
 
 function ParticipantTile({
     p,
@@ -948,7 +1287,7 @@ function ParticipantTile({
     isTeacher,
     compact,
 }: {
-    p: typeof MOCK_PARTICIPANTS[0]
+    p: MeetingParticipant
     index: number
     isTeacher?: boolean
     compact?: boolean
@@ -957,35 +1296,47 @@ function ParticipantTile({
         <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: index * 0.06 }}
+            transition={{ delay: index * 0.05 }}
             className={cn(
-                'relative rounded-2xl overflow-hidden flex items-center justify-center flex-shrink-0 border border-slate-800/80',
-                compact ? 'w-full md:w-auto h-32' : 'min-h-[140px]'
+                'relative rounded-2xl overflow-hidden flex items-center justify-center flex-shrink-0 border border-slate-800 bg-slate-900',
+                compact ? 'w-full md:w-auto h-32' : 'min-h-[160px]'
             )}
-            style={{ background: p.color + '18' }}
+            style={{ backgroundColor: p.color ? `${p.color}15` : '#1e1b4b15' }}
         >
-            <div className="flex flex-col items-center gap-1.5">
+            <div className="flex flex-col items-center gap-1.5 p-3">
                 <div
                     className="w-12 h-12 rounded-xl flex items-center justify-center font-bold text-base text-white shadow-sm"
-                    style={{ background: p.color }}
+                    style={{ background: p.color || '#6366f1' }}
                 >
                     {p.initials}
                 </div>
-                {p.isVideoOff && !compact && (
-                    <p className="text-[11px] text-slate-400">Camera off</p>
+                {!p.isCameraOn && !compact && (
+                    <p className="text-[11px] text-slate-400 flex items-center gap-1">
+                        <VideoOff size={10} /> Camera off
+                    </p>
                 )}
             </div>
 
-            <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded text-[10px] font-medium text-slate-200">
-                {p.name.split(' ')[0]}
+            <div className="absolute bottom-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-medium text-slate-200 truncate max-w-[120px]">
+                {p.name}
             </div>
-            {p.isMuted && (
-                <div className="absolute bottom-2 right-2 w-5 h-5 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-xs">
-                    <MicOff size={10} />
-                </div>
-            )}
+
+            <div className="absolute bottom-2 right-2">
+                {!p.isMicOn ? (
+                    <div className="w-5 h-5 rounded-full bg-red-600/90 text-white flex items-center justify-center shadow-xs">
+                        <MicOff size={10} />
+                    </div>
+                ) : (
+                    <div className="w-5 h-5 rounded-full bg-emerald-600/90 text-white flex items-center justify-center shadow-xs">
+                        <Mic size={10} />
+                    </div>
+                )}
+            </div>
+
             {p.isHandRaised && (
-                <div className="absolute top-2 right-2 text-sm">✋</div>
+                <div className="absolute top-2 right-2 bg-amber-500 text-slate-950 px-1.5 py-0.5 rounded-full text-[10px] font-bold shadow-md flex items-center gap-1">
+                    ✋ Raised
+                </div>
             )}
         </motion.div>
     )

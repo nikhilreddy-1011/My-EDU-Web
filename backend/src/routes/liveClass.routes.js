@@ -8,7 +8,9 @@ const {
     getLiveClassById,
     updateLiveClassStatus,
     deleteLiveClass,
+    checkLiveClassAccess,
 } = require('../controllers/liveClassController');
+const { protect } = require('../middleware/auth');
 
 // Middleware that verifies JWT teacher/admin or falls back to demo teacher
 const teacherAuthWithFallback = async (req, res, next) => {
@@ -41,6 +43,10 @@ router.route('/')
     .get(getLiveClasses)
     .post(teacherAuthWithFallback, scheduleLiveClass);
 
+// Access check: verifies authenticated student enrollment or teacher ownership
+router.route('/:id/access')
+    .get(protect, checkLiveClassAccess);
+
 router.route('/:id')
     .get(getLiveClassById)
     .delete(teacherAuthWithFallback, deleteLiveClass);
@@ -49,4 +55,5 @@ router.route('/:id/status')
     .patch(teacherAuthWithFallback, updateLiveClassStatus);
 
 module.exports = router;
+
 

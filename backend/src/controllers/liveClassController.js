@@ -318,10 +318,96 @@ const deleteLiveClass = async (req, res, next) => {
     }
 };
 
+// @desc   Verify whether authenticated user has access to join a live class
+// @route  GET /api/v1/live-classes/:id/access
+// @access Private (STUDENT, TEACHER, ADMIN)
+const checkLiveClassAccess = async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const liveClass = await LiveClass.findOne({
+            $or: [{ _id: id.match(/^[0-9a-fA-F]{24}$/) ? id : null }, { meetingId: id }]
+        })
+        .populate('instructor', 'name avatar email')
+        .populate('course', 'title thumbnail instructor isFree price students');
+
+        if (!liveClass) {
+            return res.status(404).json({ success: false, message: 'Live class not found' });
+        }
+
+        const user = req.user;
+        if (!user) {
+            return res.status(401).json({ success: false, message: 'Authentication required' });
+        }
+
+        const isTeacher = user.role === 'TEACHER' || user.role === 'ADMIN';
+
+        if (isTeacher) {
+            // Check if teacher created the live class or instructs the course
+            const isCreator = liveClass.instructor && (liveClass.instructor._id || liveClass.instructor).toString() === user._id.toString();
+            const isCourseInstructor = liveClass.course && liveClass.course.instructor && liveClass.course.instructor.toString() === user._id.toString();
+
+            if (!isCreator && !isCourseInstructor && user.role !== 'ADMIN') {
+                return res.status(403).json({
+                    success: false,
+                    authorized: false,
+                    message: 'You are not authorized to host this live class. You do not teach this course.',
+                });
+            }
+
+            return res.status(200).json({
+                success: true,
+                authorized: true,
+                isTeacher: true,
+                role: user.role,
+                liveClass,
+            });
+        }
+
+        // Student Access Control:
+        // If liveClass is linked to a course, verify enrollment
+        if (liveClass.course) {
+            const courseId = liveClass.course._id || liveClass.course;
+            const course = liveClass.course;
+
+            // Check if course is free or student is enrolled
+            const isFree = course.isFree || course.price === 0;
+            if (!isFree) {
+                const enrollment = await Enrollment.findOne({
+                    student: user._id,
+                    course: courseId,
+                });
+
+                const isEnrolled = enrollment && (enrollment.status === 'paid' || enrollment.status === 'active');
+                const isStudentInCourseArray = Array.isArray(course.students) && course.students.some(s => s.toString() === user._id.toString());
+
+                if (!isEnrolled && !isStudentInCourseArray) {
+                    return res.status(403).json({
+                        success: false,
+                        authorized: false,
+                        message: `Access denied. Please enroll in "${course.title || 'the course'}" to attend this live session.`,
+                    });
+                }
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            authorized: true,
+            isTeacher: false,
+            role: 'STUDENT',
+            liveClass,
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getLiveClasses,
     scheduleLiveClass,
     getLiveClassById,
     updateLiveClassStatus,
     deleteLiveClass,
+    checkLiveClassAccess,
 };
+

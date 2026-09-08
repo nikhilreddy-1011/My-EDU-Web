@@ -90,3 +90,20 @@ export const deleteLiveClass = async (id: string): Promise<{ success: boolean; m
         method: 'DELETE',
     });
 };
+
+export interface LiveClassAccessResponse {
+    success: boolean;
+    authorized: boolean;
+    isTeacher: boolean;
+    role: string;
+    liveClass: LiveClassItem;
+    message?: string;
+}
+
+export const checkLiveClassAccess = async (id: string, token?: string | null): Promise<LiveClassAccessResponse> => {
+    return apiClient<LiveClassAccessResponse>(`/api/v1/live-classes/${id}/access`, {
+        method: 'GET',
+        token,
+    });
+};
+

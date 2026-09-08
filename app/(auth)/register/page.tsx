@@ -8,6 +8,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Eye, EyeOff, Loader2, Zap, GraduationCap, BookOpen } from 'lucide-react'
+import { Logo } from '@/components/ui/logo'
 import { useAuthStore } from '@/store/use-auth-store'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -29,8 +30,7 @@ type RegisterForm = z.infer<typeof schema>
 export default function RegisterPage() {
     const [showPassword, setShowPassword] = React.useState(false)
     const router = useRouter()
-    const { login } = useAuthStore()
-    const [isLoading, setIsLoading] = React.useState(false)
+    const { register: registerUser, isLoading } = useAuthStore()
 
     const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<RegisterForm>({
         resolver: zodResolver(schema),
@@ -40,14 +40,13 @@ export default function RegisterPage() {
     const selectedRole = watch('role')
 
     const onSubmit = async (data: RegisterForm) => {
-        setIsLoading(true)
-        // Simulate API + auto login as demo account based on role
-        await new Promise(resolve => setTimeout(resolve, 1200))
-        const demoEmail = data.role === 'TEACHER' ? 'teacher@learnsphere.com' : 'student@learnsphere.com'
-        await login(demoEmail, 'password123')
-        toast.success('Account created! Welcome to LearnSphere 🎉')
-        router.push(data.role === 'TEACHER' ? '/teacher/dashboard' : '/student/dashboard')
-        setIsLoading(false)
+        const result = await registerUser(data.name, data.email, data.password, data.role)
+        if (result.success) {
+            toast.success('Account created! Welcome to LearnSphere 🎉')
+            router.push(result.role === 'TEACHER' ? '/teacher/dashboard' : '/student/dashboard')
+        } else {
+            toast.error(result.error || 'Registration failed')
+        }
     }
 
     const inputCls = (hasError: boolean) => cn(
@@ -59,11 +58,8 @@ export default function RegisterPage() {
         <div className="min-h-screen flex bg-background dark:bg-dark-bg">
             <div className="flex-1 flex items-center justify-center p-6">
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
-                    <div className="flex items-center gap-2 mb-8">
-                        <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center">
-                            <Zap size={18} className="text-white" />
-                        </div>
-                        <span className="font-sora font-bold text-primary dark:text-blue-400 text-xl">LearnSphere</span>
+                    <div className="mb-8">
+                        <Logo size="md" animate={true} />
                     </div>
 
                     <div className="mb-8">

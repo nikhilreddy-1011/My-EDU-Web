@@ -4,6 +4,7 @@ import React, { useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Mail, Zap, Check } from 'lucide-react'
+import { Logo } from '@/components/ui/logo'
 import { toast } from 'sonner'
 
 export default function ForgotPasswordPage() {
@@ -24,11 +25,8 @@ export default function ForgotPasswordPage() {
         <div className="min-h-screen bg-background dark:bg-dark-bg flex items-center justify-center p-6">
             <div className="w-full max-w-md">
                 {/* Logo */}
-                <div className="flex items-center justify-center gap-2 mb-8">
-                    <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-                        <Zap size={16} className="text-white" />
-                    </div>
-                    <span className="font-sora font-bold text-lg text-primary dark:text-blue-400">LearnSphere</span>
+                <div className="flex items-center justify-center mb-8">
+                    <Logo size="md" animate={true} />
                 </div>
 
                 <motion.div

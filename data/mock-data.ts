@@ -172,7 +172,8 @@ export const courses: Course[] = [
         instructorId: 't2',
         instructor: teachers[1],
         status: 'PUBLISHED',
-        price: 2999,
+        price: 1,
+        originalPrice: 100,
         rating: 4.8,
         reviewCount: 1923,
         studentCount: 12350,
@@ -1180,5 +1181,5 @@ export const demoCredentials = {
 // CATEGORIES
 // ============================================================
 export const categories = [
-    'All', 'Web Development', 'Design', 'Data Science', 'Backend', 'Cloud', 'Mobile', 'DevOps', 'Cybersecurity',
+    'All', 'Web Development', 'Machine Learning', 'Design', 'Data Science', 'Mobile Development', 'DevOps', 'Cybersecurity', 'Backend', 'Cloud'
 ]

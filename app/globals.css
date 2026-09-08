@@ -1,6 +1,177 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
+/* ==========================================================================
+   Apple SF Pro Local High-Performance Web Fonts (All Weights & Formats)
+   ========================================================================== */
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: local('SF Pro Display Light'), local('SFProDisplay-Light'),
+       url('/fonts/SFProDisplay-Light.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('SF Pro Display Regular'), local('SFProDisplay-Regular'), local('SF Pro Display'), local('SF Pro'),
+       url('/fonts/SFProDisplay-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: local('SF Pro Display Regular Italic'), local('SFProDisplay-RegularItalic'),
+       url('/fonts/SFProDisplay-RegularItalic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local('SF Pro Display Medium'), local('SFProDisplay-Medium'),
+       url('/fonts/SFProDisplay-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local('SF Pro Display Semibold'), local('SFProDisplay-Semibold'),
+       url('/fonts/SFProDisplay-Semibold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('SF Pro Display Bold'), local('SFProDisplay-Bold'),
+       url('/fonts/SFProDisplay-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: local('SF Pro Display Bold Italic'), local('SFProDisplay-BoldItalic'),
+       url('/fonts/SFProDisplay-BoldItalic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: local('SF Pro Display Heavy'), local('SFProDisplay-Heavy'),
+       url('/fonts/SFProDisplay-Heavy.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Display';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: local('SF Pro Display Black'), local('SFProDisplay-Black'),
+       url('/fonts/SFProDisplay-Black.woff2') format('woff2');
+}
+
+/* Aliases: 'SF Pro', 'SF Pro Text', 'Sora', and 'Inter' map directly to SF Pro Display */
+@font-face {
+  font-family: 'SF Pro Text';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('SF Pro Text Regular'), local('SFProText-Regular'), local('SF Pro Text'),
+       url('/fonts/SFProDisplay-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Text';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local('SF Pro Text Medium'), local('SFProText-Medium'),
+       url('/fonts/SFProDisplay-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Text';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local('SF Pro Text Semibold'), local('SFProText-Semibold'),
+       url('/fonts/SFProDisplay-Semibold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro Text';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('SF Pro Text Bold'), local('SFProText-Bold'),
+       url('/fonts/SFProDisplay-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/SFProDisplay-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/SFProDisplay-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/SFProDisplay-Semibold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/SFProDisplay-Bold.woff2') format('woff2');
+}
+
+/* Explicit fallback redirects: 'Sora' and 'Inter' map directly to SF Pro */
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/SFProDisplay-Bold.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/SFProDisplay-Regular.woff2') format('woff2');
+}
+
 @theme {
   --color-primary: #2E3A8C;
   --color-primary-dark: #1F2861;
@@ -27,17 +198,19 @@
   --color-dark-text: #E8EAF6;
   --color-dark-muted: #9EA2B8;
 
-  --font-sora: var(--font-sora), 'Sora', sans-serif;
-  --font-inter: var(--font-inter), 'Inter', sans-serif;
+  --font-sans: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sora: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-inter: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  --shadow-card: 0 2px 12px 0 rgba(46, 58, 140, 0.07);
-  --shadow-card-hover: 0 8px 30px 0 rgba(46, 58, 140, 0.12);
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 6px 16px -2px rgba(46, 58, 140, 0.06);
+  --shadow-card-hover: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 16px 32px -4px rgba(46, 58, 140, 0.12);
   --shadow-modal: 0 24px 64px 0 rgba(18, 20, 31, 0.18);
 }
 
 :root {
-  --font-sora: 'Sora', sans-serif;
-  --font-inter: 'Inter', sans-serif;
+  --font-sans: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sora: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-inter: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
   /* Colors */
   --primary: #2E3A8C;
@@ -46,41 +219,44 @@
   --accent: #FF6B4A;
   --success: #1FA97D;
   --warning: #E7A93B;
-  --background: #F6F7FB;
+  --background: #F8F9FD;
   --surface: #FFFFFF;
-  --border: #E4E7F0;
-  --text-primary: #12141F;
-  --text-muted: #666B85;
-  --text-faint: #9EA2B8;
+  --border: #E8EBF2;
+  --text-primary: #0F172A;
+  --text-muted: #64748B;
+  --text-faint: #94A3B8;
 
   /* Shadow */
-  --shadow-card: 0 2px 12px 0 rgba(46, 58, 140, 0.07);
-  --shadow-hover: 0 8px 30px 0 rgba(46, 58, 140, 0.12);
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 8px 20px -2px rgba(46, 58, 140, 0.06);
+  --shadow-hover: 0 12px 28px -4px rgba(46, 58, 140, 0.12);
   --shadow-modal: 0 24px 64px 0 rgba(18, 20, 31, 0.18);
 }
 
 .dark {
-  --background: #0F1117;
-  --surface: #1A1D2E;
-  --border: #2D3154;
-  --text-primary: #E8EAF6;
-  --text-muted: #9EA2B8;
-  --text-faint: #666B85;
-  --primary-tint: rgba(46, 58, 140, 0.2);
-  --shadow-card: 0 2px 12px 0 rgba(0, 0, 0, 0.3);
-  --shadow-hover: 0 8px 30px 0 rgba(0, 0, 0, 0.4);
+  --background: #0B0D14;
+  --surface: #141724;
+  --border: rgba(255, 255, 255, 0.08);
+  --text-primary: #F8FAFC;
+  --text-muted: #94A3B8;
+  --text-faint: #64748B;
+  --primary-tint: rgba(46, 58, 140, 0.25);
+  --shadow-card: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 8px 20px -2px rgba(0, 0, 0, 0.5);
+  --shadow-hover: 0 12px 32px -4px rgba(0, 0, 0, 0.6);
 }
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
+  font-family: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-body {
-  font-family: var(--font-inter);
+html, body {
+  font-family: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
   background-color: var(--background);
   color: var(--text-primary);
+  letter-spacing: -0.012em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 h1,
@@ -89,9 +265,14 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: var(--font-sora);
+  font-family: "SF Pro Display", "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
   font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--text-primary);
+}
+
+button, input, textarea, select {
+  font-family: inherit;
 }
 
 /* Scrollbar */
@@ -235,4 +416,54 @@ h6 {
   background: var(--dark-bg, #0F1117);
   border-color: var(--border);
   color: var(--dark-text, #E8EAF6);
+}
+
+/* ── ANIMATED LOGO TEXT GRADIENT ── */
+.animate-logo-gradient {
+  background: linear-gradient(
+    90deg,
+    #1E2356 0%,
+    #3B3DA8 18%,
+    #6366F1 32%,
+    #8B5CF6 50%,
+    #D946EF 68%,
+    #FF6B4A 84%,
+    #1E2356 100%
+  );
+  background-size: 250% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: logoGradientFlow 5s ease-in-out infinite;
+  display: inline-block;
+}
+
+.dark .animate-logo-gradient {
+  background: linear-gradient(
+    90deg,
+    #6366F1 0%,
+    #818CF8 20%,
+    #A855F7 40%,
+    #EC4899 60%,
+    #FF7A59 80%,
+    #6366F1 100%
+  );
+  background-size: 250% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: logoGradientFlow 5s ease-in-out infinite;
+  display: inline-block;
+}
+
+@keyframes logoGradientFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }

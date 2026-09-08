@@ -4,6 +4,7 @@ import React from 'react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Home, ArrowLeft, Search, Zap } from 'lucide-react'
+import { Logo } from '@/components/ui/logo'
 
 export default function NotFoundPage() {
     return (
@@ -14,11 +15,8 @@ export default function NotFoundPage() {
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: 'spring', stiffness: 300 }}
                 >
-                    <div className="flex items-center justify-center gap-3 mb-8">
-                        <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center">
-                            <Zap size={20} className="text-white" />
-                        </div>
-                        <span className="font-sora font-bold text-primary dark:text-blue-400 text-xl">LearnSphere</span>
+                    <div className="flex items-center justify-center mb-8">
+                        <Logo size="lg" animate={true} />
                     </div>
 
                     <div className="font-sora font-bold text-[120px] leading-none text-text-primary dark:text-dark-text opacity-10 select-none mb-4">

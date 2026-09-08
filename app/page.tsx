@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { motion, useInView } from 'framer-motion'
+import { motion, useInView, useReducedMotion } from 'framer-motion'
 import {
   BookOpen, Video, Brain, BarChart3, Award, TrendingUp, Star,
   ChevronRight, Play, Users, Clock, Zap, Check, ArrowRight,
@@ -13,6 +13,7 @@ import { courses } from '@/data/mock-data'
 import { formatPrice, formatNumber } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { ALL_COMPANIES } from '@/components/ui/company-logos'
+import { Logo } from '@/components/ui/logo'
 
 // Animated counter hook
 function useCounter(end: number, duration = 2000, startWhen = false) {
@@ -97,36 +98,34 @@ const STATS = [
 export default function LandingPage() {
   const statsRef = useRef<HTMLDivElement>(null)
   const isStatsInView = useInView(statsRef, { once: true, margin: '-100px' })
+  const heroHeadingRef = useRef<HTMLHeadingElement>(null)
+  const isHeroHeadingInView = useInView(heroHeadingRef, { amount: 0.25, once: false })
+  const shouldReduceMotion = useReducedMotion()
 
   return (
     <div className="min-h-screen bg-background dark:bg-dark-bg font-inter overflow-x-hidden">
       {/* ── NAVBAR ── */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-surface/80 dark:bg-dark-surface/80 backdrop-blur-md border-b border-border dark:border-dark-border">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-              <Zap size={16} className="text-white" />
-            </div>
-            <span className="font-sora font-bold text-primary dark:text-blue-400 text-lg">LearnSphere</span>
-          </Link>
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-surface/85 dark:bg-dark-surface/85 backdrop-blur-md border-b border-border dark:border-dark-border shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 sm:h-[88px] flex items-center justify-between">
+          <Logo size="lg" animate={true} />
 
-          <div className="hidden md:flex items-center gap-6">
+          <div className="hidden md:flex items-center gap-8">
             {NAV_LINKS.map(l => (
-              <Link key={l.label} href={l.href} className="text-sm text-text-muted hover:text-primary dark:hover:text-blue-400 transition-colors font-medium">
+              <Link key={l.label} href={l.href} className="text-[15px] text-text-muted hover:text-primary dark:hover:text-blue-400 transition-colors font-medium">
                 {l.label}
               </Link>
             ))}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <Link href="/login">
-              <button className="text-sm text-text-muted dark:text-dark-muted hover:text-primary transition-colors duration-100 font-medium hidden sm:block cursor-pointer">
+              <button className="text-[15px] text-text-muted dark:text-dark-muted hover:text-primary transition-colors duration-100 font-medium hidden sm:block cursor-pointer px-3 py-2">
                 Sign In
               </button>
             </Link>
             <Link href="/register">
               <motion.button
-                className="px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary-dark transition-colors duration-100 cursor-pointer"
+                className="px-6 py-2.5 bg-primary text-white text-[15px] font-semibold rounded-xl hover:bg-primary-dark transition-colors duration-100 shadow-md shadow-primary/20 cursor-pointer"
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
                 transition={{ duration: 0.1, ease: 'easeOut' }}
@@ -139,7 +138,7 @@ export default function LandingPage() {
       </nav>
 
       {/* ── HERO ── */}
-      <section className="relative pt-28 pb-20 overflow-hidden">
+      <section className="relative pt-36 sm:pt-40 pb-20 overflow-hidden">
         {/* Background */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] rounded-full opacity-10"
@@ -161,17 +160,55 @@ export default function LandingPage() {
               Introducing AI Tutor — Available 24/7
             </motion.div>
 
-            <motion.h1
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="font-sora font-bold text-5xl sm:text-6xl md:text-7xl leading-tight mb-6"
+            <h1
+              ref={heroHeadingRef}
+              className="font-sora font-bold text-5xl sm:text-6xl md:text-7xl leading-tight mb-6 overflow-hidden"
               style={{ color: 'var(--text-primary)' }}
             >
-              Learn smarter.
-              <br />
-              <span className="gradient-text">Grow faster.</span>
-            </motion.h1>
+              <motion.span
+                className="block"
+                initial={shouldReduceMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -60 }}
+                animate={
+                  shouldReduceMotion
+                    ? { opacity: 1, x: 0 }
+                    : isHeroHeadingInView
+                    ? { opacity: 1, x: 0 }
+                    : { opacity: 0, x: -60 }
+                }
+                transition={
+                  shouldReduceMotion
+                    ? { duration: 0 }
+                    : {
+                        duration: isHeroHeadingInView ? 0.8 : 0.2,
+                        ease: [0.22, 1, 0.36, 1],
+                      }
+                }
+              >
+                Learn smarter.
+              </motion.span>
+              <motion.span
+                className="block gradient-text"
+                initial={shouldReduceMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: 60 }}
+                animate={
+                  shouldReduceMotion
+                    ? { opacity: 1, x: 0 }
+                    : isHeroHeadingInView
+                    ? { opacity: 1, x: 0 }
+                    : { opacity: 0, x: 60 }
+                }
+                transition={
+                  shouldReduceMotion
+                    ? { duration: 0 }
+                    : {
+                        duration: isHeroHeadingInView ? 0.8 : 0.2,
+                        delay: isHeroHeadingInView ? 0.12 : 0,
+                        ease: [0.22, 1, 0.36, 1],
+                      }
+                }
+              >
+                Grow faster.
+              </motion.span>
+            </h1>
 
             <motion.p
               initial={{ opacity: 0, y: 20 }}
@@ -558,81 +595,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── ABOUT US FEATURED SECTION ── */}
-      <section className="py-20 border-t border-border dark:border-dark-border bg-surface/40 dark:bg-dark-surface/40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              className="lg:col-span-6"
-            >
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary-tint dark:bg-dark-surface2 text-primary dark:text-blue-400 text-xs font-semibold uppercase tracking-wider mb-4">
-                <Users size={14} />
-                WHO WE ARE
-              </div>
-              <h2 className="font-sora font-bold text-3xl sm:text-4xl text-text-primary dark:text-dark-text mb-6 leading-tight">
-                Built by educators & researchers for <span className="gradient-text">ambitious learners.</span>
-              </h2>
-              <p className="text-text-muted dark:text-dark-muted text-base leading-relaxed mb-6">
-                Founded by former Computer Science Professor Dr. Arjun Mehta, LearnSphere bridges the gap between traditional academic theory and fast-paced tech industry demands.
-              </p>
-
-              <div className="grid grid-cols-2 gap-4 mb-8">
-                <div className="p-4 rounded-2xl bg-surface dark:bg-dark-surface border border-border dark:border-dark-border">
-                  <div className="font-sora font-bold text-lg text-primary dark:text-blue-400 mb-1">Our Vision</div>
-                  <p className="text-xs text-text-muted dark:text-dark-muted leading-relaxed">Democratizing elite AI-native education for 10M+ students globally.</p>
-                </div>
-                <div className="p-4 rounded-2xl bg-surface dark:bg-dark-surface border border-border dark:border-dark-border">
-                  <div className="font-sora font-bold text-lg text-accent mb-1">Our Mission</div>
-                  <p className="text-xs text-text-muted dark:text-dark-muted leading-relaxed">Live interactive classes, hands-on projects & 24/7 AI tutoring.</p>
-                </div>
-              </div>
-
-              <Link href="/about">
-                <motion.button
-                  className="px-6 py-3 bg-primary text-white font-semibold rounded-xl hover:bg-primary-dark transition-colors flex items-center gap-2 text-sm cursor-pointer"
-                  whileHover={{ scale: 1.03 }}
-                  whileTap={{ scale: 0.97 }}
-                >
-                  Read Our Story & Team
-                  <ArrowRight size={16} />
-                </motion.button>
-              </Link>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              className="lg:col-span-6"
-            >
-              <div className="p-8 rounded-3xl bg-surface dark:bg-dark-surface border border-border dark:border-dark-border shadow-xl relative">
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="w-14 h-14 rounded-2xl bg-primary-tint dark:bg-dark-surface2 flex items-center justify-center font-sora font-bold text-primary dark:text-blue-400 text-xl">
-                    AM
-                  </div>
-                  <div>
-                    <h3 className="font-sora font-bold text-xl text-text-primary dark:text-dark-text">Dr. Arjun Mehta</h3>
-                    <p className="text-xs text-primary dark:text-blue-400 font-semibold">Founder & CEO</p>
-                  </div>
-                </div>
-                <blockquote className="text-text-muted dark:text-dark-muted text-sm leading-relaxed italic border-l-2 border-accent pl-4 my-4">
-                  &ldquo;We created LearnSphere so that any student, regardless of background or location, can learn directly from top industry experts and an AI tutor that never sleeps.&rdquo;
-                </blockquote>
-                <div className="pt-4 border-t border-border dark:border-dark-border flex items-center justify-between text-xs text-text-faint font-medium">
-                  <span>6 Core Team Leaders</span>
-                  <Link href="/about" className="text-accent font-semibold flex items-center gap-1 hover:underline">
-                    Explore Team <ChevronRight size={14} />
-                  </Link>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
       {/* ── CTA ── */}
       <section className="py-24 relative overflow-hidden">
         <div className="absolute inset-0 pointer-events-none">
@@ -690,11 +652,8 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
             <div className="col-span-2">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-                  <Zap size={16} className="text-white" />
-                </div>
-                <span className="font-sora font-bold text-white text-lg">LearnSphere</span>
+              <div className="mb-4">
+                <Logo size="md" showTagline={true} animate={true} />
               </div>
               <p className="text-sm leading-relaxed text-dark-muted mb-4">
                 Learn smarter. Grow faster. The modern platform for ambitious learners.

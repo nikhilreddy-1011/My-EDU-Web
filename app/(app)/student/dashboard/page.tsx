@@ -9,7 +9,10 @@ import {
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
 import { useAuthStore } from '@/store/use-auth-store'
-import { enrollments, liveClasses, quizzes, userBadges, studentStats } from '@/data/mock-data'
+import { enrollments as mockEnrollments, liveClasses as fallbackClasses, quizzes, userBadges, studentStats } from '@/data/mock-data'
+import { getMyEnrollments } from '@/lib/api/enrollments'
+import { getLiveClasses } from '@/lib/api/live-classes'
+import { connectSocket } from '@/lib/socket'
 import { getGreeting, formatDate, formatTime } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import {
@@ -20,17 +23,102 @@ const container = { hidden: {}, show: { transition: { staggerChildren: 0.07 } } 
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }
 
 export default function StudentDashboard() {
-    const user = useAuthStore(state => state.user)
+    const { user, isAuthenticated } = useAuthStore()
     const stats = studentStats
 
-    const inProgress = enrollments.filter(e => !e.completedAt).slice(0, 3)
-    const upcoming = liveClasses.filter(lc => lc.status === 'UPCOMING').slice(0, 2)
-    const liveNow = liveClasses.filter(lc => lc.status === 'LIVE').slice(0, 1)
+    const [enrolledList, setEnrolledList] = React.useState<any[]>(mockEnrollments)
+    const [liveList, setLiveList] = React.useState<any[]>(fallbackClasses)
+
+    const fetchLiveClassesData = () => {
+        getLiveClasses()
+            .then(res => {
+                if (res && res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+                    const mapped = res.classes.map(c => ({
+                        id: c.meetingId || c._id,
+                        meetingId: c.meetingId || c._id,
+                        _id: c._id,
+                        title: c.title,
+                        course: {
+                            title: c.courseTitle || c.course?.title || 'Live Class',
+                        },
+                        instructor: {
+                            name: c.instructorName || (typeof c.instructor === 'object' ? c.instructor?.name : 'Instructor'),
+                        },
+                        date: c.scheduledAt,
+                        status: c.status,
+                        attendees: c.attendeesCount || 0,
+                    }))
+                    setLiveList(mapped)
+                }
+            })
+            .catch(() => {})
+    }
+
+    React.useEffect(() => {
+        fetchLiveClassesData()
+
+        const socket = connectSocket()
+        const onScheduled = () => fetchLiveClassesData()
+        const onStatus = ({ meetingId, id, status }: any) => {
+            setLiveList(prev => prev.map(c =>
+                (c.meetingId === meetingId || c.id === meetingId || c._id === id || c.id === id)
+                    ? { ...c, status }
+                    : c
+            ))
+        }
+
+        socket.on('live_class_scheduled', onScheduled)
+        socket.on('live_class_status_changed', onStatus)
+
+        return () => {
+            socket.off('live_class_scheduled', onScheduled)
+            socket.off('live_class_status_changed', onStatus)
+        }
+    }, [])
+
+    React.useEffect(() => {
+        if (!isAuthenticated) return
+
+        let isMounted = true
+        getMyEnrollments()
+            .then(res => {
+                if (isMounted && res && res.success && Array.isArray(res.enrollments) && res.enrollments.length > 0) {
+                    const mapped = res.enrollments
+                        .filter((e: any) => e.status !== 'failed' && e.status !== 'pending')
+                        .map((e: any) => ({
+                            id: e._id || e.id,
+                            courseId: e.course?._id || e.courseId || e.course,
+                            progress: e.progress || 0,
+                            completedLessons: e.completedLessons || [],
+                            completedAt: e.completedAt,
+                            course: {
+                                title: e.course?.title || 'Enrolled Course',
+                                thumbnail: e.course?.thumbnail || '',
+                                instructor: {
+                                    name: e.course?.instructor?.name || 'Instructor',
+                                },
+                            },
+                        }))
+                    setEnrolledList(mapped)
+                }
+            })
+            .catch(() => {
+                // Keep mock enrollments as fallback
+            })
+
+        return () => {
+            isMounted = false
+        }
+    }, [isAuthenticated])
+
+    const inProgress = enrolledList.filter(e => !e.completedAt).slice(0, 3)
+    const upcoming = liveList.filter(lc => lc.status === 'UPCOMING').slice(0, 3)
+    const liveNow = liveList.filter(lc => lc.status === 'LIVE').slice(0, 1)
     const upcomingQuizzes = quizzes.filter(q => q.isPublished).slice(0, 2)
 
     const statCards = [
         { label: 'Overall Progress', value: `${stats.overallProgress}%`, icon: <TrendingUp size={18} />, color: 'text-primary', bg: 'bg-primary-tint dark:bg-dark-surface2', delta: '+5% this week' },
-        { label: 'In Progress', value: stats.coursesInProgress, icon: <BookOpen size={18} />, color: 'text-warning', bg: 'bg-yellow-50 dark:bg-yellow-900/10', delta: '1 new this month' },
+        { label: 'In Progress', value: enrolledList.length > 0 ? enrolledList.length : stats.coursesInProgress, icon: <BookOpen size={18} />, color: 'text-warning', bg: 'bg-yellow-50 dark:bg-yellow-900/10', delta: 'Active' },
         { label: 'Completed', value: stats.coursesCompleted, icon: <Award size={18} />, color: 'text-success', bg: 'bg-green-50 dark:bg-green-900/10', delta: '2 this quarter' },
         { label: 'Learning Hours', value: `${stats.learningHours}h`, icon: <Clock size={18} />, color: 'text-accent', bg: 'bg-orange-50 dark:bg-orange-900/10', delta: '+3h this week' },
     ]
@@ -170,7 +258,7 @@ export default function StudentDashboard() {
                                 </div>
                                 <p className="font-semibold text-sm text-text-primary dark:text-dark-text mb-1">{lc.title}</p>
                                 <p className="text-xs text-text-muted mb-2">{lc.instructor.name} · {lc.attendees} attending</p>
-                                <Link href={`/student/live-classes/${lc.id}`}>
+                                <Link href={`/student/live-classes/${lc.meetingId || lc.id}`}>
                                     <button className="w-full py-2 bg-accent text-white text-xs font-semibold rounded-lg hover:bg-accent-hover transition-colors">
                                         Join Now
                                     </button>
@@ -187,7 +275,7 @@ export default function StudentDashboard() {
                                     <p className="text-sm font-medium text-text-primary dark:text-dark-text truncate">{lc.title}</p>
                                     <p className="text-xs text-text-muted">{formatDate(lc.date)} · {formatTime(lc.date)}</p>
                                 </div>
-                                <Link href={`/student/live-classes/${lc.id}`}>
+                                <Link href={`/student/live-classes/${lc.meetingId || lc.id}`}>
                                     <button className="text-xs px-3 py-1.5 rounded-lg border border-primary text-primary hover:bg-primary-tint transition-colors font-medium whitespace-nowrap">
                                         Details
                                     </button>

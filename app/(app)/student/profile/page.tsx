@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Camera, User, Lock, Bell as BellIcon, Palette, Shield, LogOut, X } from 'lucide-react'
+import { Camera, User, Lock, Bell as BellIcon, Palette, Shield, LogOut, X, Edit3 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
 import { useAuthStore } from '@/store/use-auth-store'
 import { useTheme } from 'next-themes'
@@ -10,6 +10,8 @@ import { userBadges, studentStats } from '@/data/mock-data'
 import { getInitials, cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
+import { ProfilePhotoModal } from '@/components/profile/profile-photo-modal'
+import { updateUserProfile } from '@/lib/api/user'
 
 const SETTINGS_TABS = [
     { id: 'profile', label: 'Profile', icon: <User size={16} /> },
@@ -27,16 +29,26 @@ export default function ProfilePage() {
     const { theme, setTheme } = useTheme()
     const [activeTab, setActiveTab] = useState('profile')
     const [showLogoutModal, setShowLogoutModal] = useState(false)
+    const [showPhotoModal, setShowPhotoModal] = useState(false)
     const [name, setName] = useState(user?.name || '')
     const [bio, setBio] = useState(user?.bio || '')
     const [isSaving, setIsSaving] = useState(false)
 
     const handleSave = async () => {
         setIsSaving(true)
-        await new Promise(r => setTimeout(r, 800))
         updateUser({ name, bio })
+        try {
+            await updateUserProfile({ name, bio })
+        } catch {}
         toast.success('Profile updated successfully!')
         setIsSaving(false)
+    }
+
+    const handleAvatarSave = async (newUrl: string) => {
+        updateUser({ avatar: newUrl })
+        try {
+            await updateUserProfile({ avatar: newUrl })
+        } catch {}
     }
 
     const handleLogout = () => {
@@ -50,16 +62,34 @@ export default function ProfilePage() {
                 {/* Profile header */}
                 <div className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-6">
                     <div className="flex items-start gap-5 flex-wrap">
-                        <div className="relative">
-                            <div className="w-20 h-20 rounded-2xl bg-primary-tint dark:bg-dark-surface2 border-2 border-border dark:border-dark-border flex items-center justify-center">
-                                <span className="font-sora font-bold text-2xl text-primary">{getInitials(user?.name || 'U')}</span>
+                        <div className="relative group cursor-pointer" onClick={() => setShowPhotoModal(true)}>
+                            <div className="w-20 h-20 rounded-2xl bg-primary-tint dark:bg-dark-surface2 border-2 border-border dark:border-dark-border flex items-center justify-center overflow-hidden shadow-xs group-hover:ring-2 group-hover:ring-primary/40 transition-all">
+                                {user?.avatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={user.avatar} alt={user?.name || 'Student'} className="w-full h-full object-cover" />
+                                ) : (
+                                    <span className="font-sora font-bold text-2xl text-primary">{getInitials(user?.name || 'U')}</span>
+                                )}
                             </div>
-                            <button className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center hover:bg-primary-dark transition-colors">
-                                <Camera size={12} />
+                            <button
+                                type="button"
+                                title="Change profile photo"
+                                className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary text-white flex items-center justify-center hover:bg-primary-dark transition-colors shadow-sm ring-2 ring-surface dark:ring-dark-surface"
+                            >
+                                <Camera size={13} />
                             </button>
                         </div>
-                        <div className="flex-1">
-                            <h1 className="font-sora font-bold text-xl text-text-primary dark:text-dark-text">{user?.name}</h1>
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h1 className="font-sora font-bold text-xl text-text-primary dark:text-dark-text">{user?.name}</h1>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPhotoModal(true)}
+                                    className="px-2.5 py-1 text-xs font-semibold text-primary dark:text-blue-400 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors flex items-center gap-1"
+                                >
+                                    <Camera size={11} /> Change Photo
+                                </button>
+                            </div>
                             <p className="text-text-muted text-sm">{user?.email}</p>
                             <div className="flex gap-4 mt-3 text-sm">
                                 <div className="text-center"><div className="font-semibold text-text-primary dark:text-dark-text">{studentStats.coursesCompleted}</div><div className="text-text-faint text-xs">Completed</div></div>
@@ -192,6 +222,17 @@ export default function ProfilePage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Profile Photo Options Modal */}
+            <ProfilePhotoModal
+                isOpen={showPhotoModal}
+                onClose={() => setShowPhotoModal(false)}
+                currentAvatar={user?.avatar}
+                userName={user?.name || 'Student'}
+                userRole="STUDENT"
+                onSave={handleAvatarSave}
+            />
         </AppLayout>
     )
 }
+

@@ -34,6 +34,8 @@ export interface Course {
     instructor: User
     status: CourseStatus
     price: number           // 0 = free
+    originalPrice?: number
+    isFree?: boolean
     rating: number
     reviewCount: number
     studentCount: number
@@ -85,6 +87,10 @@ export interface Enrollment {
     completedLessons: string[]
     enrolledAt: string
     completedAt?: string
+    paymentId?: string
+    orderId?: string
+    amount?: number
+    status?: 'pending' | 'paid' | 'failed'
 }
 
 export interface Quiz {

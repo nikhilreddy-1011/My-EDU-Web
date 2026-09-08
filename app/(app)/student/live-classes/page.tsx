@@ -8,8 +8,11 @@ import {
     Download, Play, Bell, Search, Filter, Eye, BookOpen, Tag, Star
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { liveClasses, mockLectures, mockNotes } from '@/data/mock-data'
+import { liveClasses as fallbackClasses } from '@/data/mock-data'
+import { mockLectures, mockNotes } from '@/data/mock-data'
 import { formatDate, formatTime, formatDuration, cn } from '@/lib/utils'
+import { getLiveClasses } from '@/lib/api/live-classes'
+import { connectSocket } from '@/lib/socket'
 import { toast } from 'sonner'
 
 const MAIN_TABS = ['Live Classes', 'Lectures', 'Notes'] as const
@@ -50,13 +53,80 @@ export default function StudentLiveClassesPage() {
     const [searchQuery, setSearchQuery] = useState('')
     const [reminders, setReminders] = useState<Set<string>>(new Set())
 
-    const upcoming = liveClasses.filter(lc => lc.status === 'UPCOMING')
-    const live      = liveClasses.filter(lc => lc.status === 'LIVE')
-    const completed = liveClasses.filter(lc => lc.status === 'COMPLETED')
+    const [classesList, setClassesList] = useState<any[]>(fallbackClasses)
+    const [isLoading, setIsLoading] = useState(false)
+
+    const fetchLiveClassesData = async () => {
+        setIsLoading(true)
+        try {
+            const res = await getLiveClasses()
+            if (res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+                const mapped = res.classes.map(c => ({
+                    id: c.meetingId || c._id,
+                    meetingId: c.meetingId || c._id,
+                    _id: c._id,
+                    title: c.title,
+                    description: c.description,
+                    course: {
+                        id: c.course?._id || 'c1',
+                        title: c.courseTitle || c.course?.title || 'Live Session',
+                        category: c.course?.category || 'Workshop',
+                    },
+                    instructorId: typeof c.instructor === 'string' ? c.instructor : (c.instructor?._id || 't1'),
+                    instructor: {
+                        name: c.instructorName || (typeof c.instructor === 'object' ? c.instructor?.name : 'Instructor'),
+                        avatar: c.instructorAvatar || (typeof c.instructor === 'object' ? c.instructor?.avatar : ''),
+                        title: 'Lead Instructor',
+                    },
+                    date: c.scheduledAt,
+                    duration: c.duration || 60,
+                    status: c.status,
+                    attendees: c.attendeesCount || 0,
+                    maxAttendees: c.maxSeats || 500,
+                    meetingUrl: c.meetingUrl || `/student/live-classes/${c.meetingId || c._id}`,
+                    tags: c.tags || [],
+                }))
+                setClassesList(mapped)
+            }
+        } catch (err) {
+            console.error('Failed to load live classes:', err)
+        } finally {
+            setIsLoading(false)
+        }
+    }
+
+    useEffect(() => {
+        fetchLiveClassesData()
+
+        const socket = connectSocket()
+        const onScheduled = (newClass: any) => {
+            fetchLiveClassesData()
+            toast.info(`New live session announced: "${newClass.title}" 🔔`)
+        }
+        const onStatusChanged = ({ meetingId, id, status }: any) => {
+            setClassesList(prev => prev.map(c => 
+                (c.meetingId === meetingId || c.id === meetingId || c._id === id || c.id === id)
+                    ? { ...c, status }
+                    : c
+            ))
+        }
+
+        socket.on('live_class_scheduled', onScheduled)
+        socket.on('live_class_status_changed', onStatusChanged)
+
+        return () => {
+            socket.off('live_class_scheduled', onScheduled)
+            socket.off('live_class_status_changed', onStatusChanged)
+        }
+    }, [])
+
+    const upcoming = classesList.filter(lc => lc.status === 'UPCOMING')
+    const live      = classesList.filter(lc => lc.status === 'LIVE')
+    const completed = classesList.filter(lc => lc.status === 'COMPLETED')
 
     const classes = (classTab === 'Upcoming' ? upcoming : classTab === 'Live Now' ? live : completed)
-        .filter(lc => lc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            lc.instructor.name.toLowerCase().includes(searchQuery.toLowerCase()))
+        .filter(lc => lc.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            lc.instructor?.name?.toLowerCase().includes(searchQuery.toLowerCase()))
 
     const filteredLectures = mockLectures.filter(l =>
         l.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -280,7 +350,7 @@ export default function StudentLiveClassesPage() {
 
 // ── StudentClassCard — proper component so hooks work ──────────
 function StudentClassCard({ lc, index, hasReminder, onToggleReminder }: {
-    lc: typeof liveClasses[0]
+    lc: any
     index: number
     hasReminder: boolean
     onToggleReminder: () => void
@@ -333,7 +403,7 @@ function StudentClassCard({ lc, index, hasReminder, onToggleReminder }: {
 
                 <div className="flex flex-col gap-2 flex-shrink-0">
                     {lc.status === 'LIVE' && (
-                        <Link href={`/student/live-classes/${lc.id}`}>
+                        <Link href={`/student/live-classes/${lc.meetingId || lc.id}`}>
                             <motion.button className="px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2 bg-red-500 text-white hover:bg-red-600 transition-colors"
                                 whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
                                 <span className="w-2 h-2 bg-white rounded-full animate-pulse" />Join Now

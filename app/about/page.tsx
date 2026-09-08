@@ -8,6 +8,8 @@ import {
     Zap, Sparkles, Target, Compass, Users,
     ArrowRight, CheckCircle2
 } from 'lucide-react'
+import { Logo } from '@/components/ui/logo'
+
 
 const NAV_LINKS = [
     { label: 'Courses', href: '/student/courses' },
@@ -112,32 +114,27 @@ export default function AboutPage() {
     return (
         <div className="min-h-screen bg-background dark:bg-dark-bg text-text-primary dark:text-dark-text font-inter overflow-x-hidden">
             {/* ── NAVBAR ── */}
-            <nav className="fixed top-0 left-0 right-0 z-50 bg-surface/80 dark:bg-dark-surface/80 backdrop-blur-md border-b border-border dark:border-dark-border">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-                            <Zap size={16} className="text-white" />
-                        </div>
-                        <span className="font-sora font-bold text-primary dark:text-blue-400 text-lg">LearnSphere</span>
-                    </Link>
+            <nav className="fixed top-0 left-0 right-0 z-50 bg-surface/85 dark:bg-dark-surface/85 backdrop-blur-md border-b border-border dark:border-dark-border shadow-sm">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 sm:h-[88px] flex items-center justify-between">
+                    <Logo size="lg" animate={true} />
 
-                    <div className="hidden md:flex items-center gap-6">
+                    <div className="hidden md:flex items-center gap-8">
                         {NAV_LINKS.map(l => (
-                            <Link key={l.label} href={l.href} className={`text-sm font-medium transition-colors ${l.href === '/about' ? 'text-primary dark:text-blue-400 font-semibold' : 'text-text-muted hover:text-primary dark:hover:text-blue-400'}`}>
+                            <Link key={l.label} href={l.href} className={`text-[15px] font-medium transition-colors ${l.href === '/about' ? 'text-primary dark:text-blue-400 font-semibold' : 'text-text-muted hover:text-primary dark:hover:text-blue-400'}`}>
                                 {l.label}
                             </Link>
                         ))}
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-4">
                         <Link href="/login">
-                            <button className="text-sm text-text-muted dark:text-dark-muted hover:text-primary transition-colors duration-100 font-medium hidden sm:block cursor-pointer">
+                            <button className="text-[15px] text-text-muted dark:text-dark-muted hover:text-primary transition-colors duration-100 font-medium hidden sm:block cursor-pointer px-3 py-2">
                                 Sign In
                             </button>
                         </Link>
                         <Link href="/register">
                             <motion.button
-                                className="px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary-dark transition-colors duration-100 cursor-pointer"
+                                className="px-6 py-2.5 bg-primary text-white text-[15px] font-semibold rounded-xl hover:bg-primary-dark transition-colors duration-100 shadow-md shadow-primary/20 cursor-pointer"
                                 whileHover={{ scale: 1.03 }}
                                 whileTap={{ scale: 0.97 }}
                                 transition={{ duration: 0.1, ease: 'easeOut' }}
@@ -150,7 +147,7 @@ export default function AboutPage() {
             </nav>
 
             {/* ── HERO SECTION ── */}
-            <section className="relative pt-32 pb-20 overflow-hidden border-b border-border dark:border-dark-border">
+            <section className="relative pt-36 sm:pt-40 pb-20 overflow-hidden border-b border-border dark:border-dark-border">
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] rounded-full opacity-15"
                         style={{ background: 'radial-gradient(circle, #2E3A8C 0%, transparent 70%)' }} />

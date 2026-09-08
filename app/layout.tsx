@@ -13,11 +13,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+        {/* Preload Apple SF Pro High-Performance Local Web Fonts */}
+        <link rel="preload" href="/fonts/SFProDisplay-Regular.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/SFProDisplay-Medium.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/SFProDisplay-Semibold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/SFProDisplay-Bold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
       </head>
-      <body className="font-inter antialiased" suppressHydrationWarning>
+      <body className="font-sans antialiased text-text-primary dark:text-dark-text selection:bg-primary/15 selection:text-primary" suppressHydrationWarning>
         <ThemeProvider>
           {children}
           <Toaster
@@ -28,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 color: 'var(--text-primary)',
                 border: '1px solid var(--border)',
                 borderRadius: '12px',
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: 'var(--font-sans)',
               },
             }}
           />

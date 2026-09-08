@@ -7,7 +7,8 @@ import { motion } from 'framer-motion'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Eye, EyeOff, Loader2, Zap, BookOpen, TrendingUp, Award, GraduationCap, Users, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, Loader2, Zap, BookOpen, TrendingUp, Award, GraduationCap, Users, ShieldCheck, Star } from 'lucide-react'
+import { Logo } from '@/components/ui/logo'
 import { useAuthStore } from '@/store/use-auth-store'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -22,8 +23,19 @@ type LoginForm = z.infer<typeof loginSchema>
 
 export default function LoginPage() {
     const [showPassword, setShowPassword] = React.useState(false)
+    const [redirectUrl, setRedirectUrl] = React.useState<string | null>(null)
     const { login, isLoading } = useAuthStore()
     const router = useRouter()
+
+    React.useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const params = new URLSearchParams(window.location.search)
+            const redir = params.get('redirect')
+            if (redir && redir.startsWith('/')) {
+                setRedirectUrl(redir)
+            }
+        }
+    }, [])
 
     const { register, handleSubmit, formState: { errors }, setValue } = useForm<LoginForm>({
         resolver: zodResolver(loginSchema),
@@ -34,7 +46,9 @@ export default function LoginPage() {
         if (result.success) {
             const role = result.role
             toast.success('Welcome back! 👋')
-            if (role === 'TEACHER') {
+            if (redirectUrl && redirectUrl.startsWith('/')) {
+                router.push(redirectUrl)
+            } else if (role === 'TEACHER') {
                 router.push('/teacher/dashboard')
             } else if (role === 'ADMIN') {
                 router.push('/admin/dashboard')
@@ -48,9 +62,9 @@ export default function LoginPage() {
 
     const fillLogin = (role: 'student' | 'teacher' | 'admin') => {
         const creds = {
-            student: { email: 'student@learnsphere.com', password: 'password123' },
-            teacher: { email: 'teacher@learnsphere.com', password: 'password123' },
-            admin:   { email: 'admin@learnsphere.com',   password: 'admin123'    },
+            student: { email: 'student@learnsphere.com', password: 'Student@123' },
+            teacher: { email: 'teacher@learnsphere.com', password: 'Teacher@123' },
+            admin:   { email: 'admin@learnsphere.com',   password: 'Admin@123'   },
         }
         setValue('email', creds[role].email)
         setValue('password', creds[role].password)
@@ -58,58 +72,71 @@ export default function LoginPage() {
 
     return (
         <div className="min-h-screen flex">
-            {/* Left panel — branding */}
-            <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden flex-col items-center justify-center p-12"
-                style={{ background: 'linear-gradient(135deg, #1F2861 0%, #2E3A8C 60%, #3D4FA8 100%)' }}>
+            {/* Left panel — branding with website's premium cosmic/midnight theme */}
+            <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden flex-col items-center justify-center p-12 bg-[#0C0E1E]">
+                {/* Layered rich ambient glow & subtle grid */}
+                <div className="absolute inset-0 pointer-events-none">
+                    {/* Subtle grid pattern */}
+                    <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff08_1px,transparent_1px),linear-gradient(to_bottom,#ffffff08_1px,transparent_1px)] bg-[size:36px_36px] opacity-50" />
 
-                {/* Decorative blobs */}
-                <div className="absolute top-0 right-0 w-[400px] h-[400px] rounded-full bg-accent/10 blur-3xl -translate-y-1/2 translate-x-1/2" />
-                <div className="absolute bottom-0 left-0 w-[300px] h-[300px] rounded-full bg-blue-400/10 blur-3xl translate-y-1/2 -translate-x-1/2" />
+                    {/* Radial gradients matching website brand colors */}
+                    <div className="absolute -top-24 -right-24 w-[480px] h-[480px] rounded-full bg-accent/20 blur-[120px]" />
+                    <div className="absolute top-1/3 -left-28 w-[440px] h-[440px] rounded-full bg-[#6366F1]/20 blur-[130px]" />
+                    <div className="absolute -bottom-20 right-1/4 w-[380px] h-[380px] rounded-full bg-[#8B5CF6]/15 blur-[110px]" />
+                </div>
 
                 <div className="relative z-10 max-w-md text-center">
-                    <div className="flex items-center justify-center gap-3 mb-8">
-                        <div className="w-12 h-12 rounded-2xl bg-accent flex items-center justify-center">
-                            <Zap size={24} className="text-white" />
-                        </div>
-                        <span className="font-sora font-bold text-white text-2xl">LearnSphere</span>
+                    <div className="flex items-center justify-center mb-8">
+                        <Logo size="lg" animate={true} />
                     </div>
 
-                    <h2 className="font-sora font-bold text-white text-4xl mb-4 leading-tight">
-                        Learn smarter.<br />Grow faster.
+                    <h2 className="font-sora font-bold text-4xl mb-4 leading-tight">
+                        <span className="block text-white font-extrabold">Learn smarter.</span>
+                        <span className="block font-extrabold bg-gradient-to-r from-violet-400 via-pink-400 to-accent text-transparent bg-clip-text drop-shadow-[0_4px_16px_rgba(255,107,74,0.3)]">
+                            Grow faster.
+                        </span>
                     </h2>
-                    <p className="text-blue-200 text-lg mb-12 leading-relaxed">
-                        Join 50,000+ learners transforming their careers with world-class courses and expert instructors.
+                    <p className="text-slate-300 text-base mb-10 leading-relaxed">
+                        Join 50,000+ learners transforming their careers with world-class courses and an AI tutor that never sleeps.
                     </p>
 
-                    {/* Stats */}
-                    <div className="grid grid-cols-3 gap-4 mb-12">
+                    {/* Glassmorphic Stats Grid */}
+                    <div className="grid grid-cols-3 gap-3.5 mb-10">
                         {[
-                            { label: 'Learners', value: '50K+', icon: <BookOpen size={18} /> },
-                            { label: 'Courses', value: '500+', icon: <TrendingUp size={18} /> },
-                            { label: 'Completion', value: '95%', icon: <Award size={18} /> },
+                            { label: 'Learners', value: '50K+', icon: <BookOpen size={18} className="text-blue-400" />, border: 'border-blue-500/20', bg: 'bg-blue-500/10' },
+                            { label: 'Courses', value: '500+', icon: <TrendingUp size={18} className="text-accent" />, border: 'border-accent/25', bg: 'bg-accent/10' },
+                            { label: 'Completion', value: '95%', icon: <Award size={18} className="text-emerald-400" />, border: 'border-emerald-500/20', bg: 'bg-emerald-500/10' },
                         ].map(stat => (
-                            <div key={stat.label} className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
-                                <div className="text-accent mb-1">{stat.icon}</div>
-                                <div className="font-sora font-bold text-white text-xl">{stat.value}</div>
-                                <div className="text-blue-200 text-xs">{stat.label}</div>
+                            <div key={stat.label} className="bg-white/[0.05] hover:bg-white/[0.08] backdrop-blur-xl rounded-2xl p-4 border border-white/[0.12] transition-all hover:scale-[1.02] shadow-xl shadow-black/25">
+                                <div className={cn('w-9 h-9 rounded-xl flex items-center justify-center mx-auto mb-2.5 border', stat.bg, stat.border)}>
+                                    {stat.icon}
+                                </div>
+                                <div className="font-sora font-extrabold text-white text-xl">{stat.value}</div>
+                                <div className="text-slate-400 text-[11px] font-medium uppercase tracking-wider mt-0.5">{stat.label}</div>
                             </div>
                         ))}
                     </div>
 
-                    {/* Fake user avatars */}
-                    <div className="flex items-center justify-center gap-2">
+                    {/* Social proof pill */}
+                    <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-white/[0.06] backdrop-blur-md border border-white/[0.12] shadow-lg shadow-black/20">
                         <div className="flex -space-x-2">
                             {['s1', 's2', 's3', 's4', 's5'].map((seed, i) => (
                                 <div
                                     key={seed}
-                                    className="w-8 h-8 rounded-full border-2 border-primary bg-primary-tint flex items-center justify-center"
+                                    className="w-7 h-7 rounded-full border-2 border-[#0C0E1E] bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-[10px] font-bold shadow-sm"
                                     style={{ zIndex: 5 - i }}
                                 >
-                                    <span className="text-primary text-xs font-bold">{String.fromCharCode(65 + i)}</span>
+                                    {String.fromCharCode(65 + i)}
                                 </div>
                             ))}
                         </div>
-                        <span className="text-blue-200 text-sm">+48,000 learners</span>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-200 font-medium">
+                            <span className="text-amber-400 font-bold flex items-center gap-0.5">
+                                <Star size={12} className="fill-amber-400 text-amber-400" /> 4.9/5
+                            </span>
+                            <span className="text-slate-500">·</span>
+                            <span>50,000+ enrolled</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -122,11 +149,8 @@ export default function LoginPage() {
                     className="w-full max-w-md"
                 >
                     {/* Mobile logo */}
-                    <div className="flex items-center gap-2 mb-8 lg:hidden">
-                        <div className="w-9 h-9 rounded-xl bg-accent flex items-center justify-center">
-                            <Zap size={18} className="text-white" />
-                        </div>
-                        <span className="font-sora font-bold text-primary dark:text-blue-400 text-xl">LearnSphere</span>
+                    <div className="mb-8 lg:hidden">
+                        <Logo size="md" animate={true} />
                     </div>
 
                     <div className="mb-6">

@@ -8,7 +8,9 @@ import { useAuthStore } from '@/store/use-auth-store'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { useTheme } from 'next-themes'
-import { cn } from '@/lib/utils'
+import { cn, getInitials } from '@/lib/utils'
+import { ProfilePhotoModal } from '@/components/profile/profile-photo-modal'
+import { updateUserProfile } from '@/lib/api/user'
 
 const TABS = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -19,18 +21,30 @@ const TABS = [
 
 export default function TeacherProfilePage() {
     const user = useAuthStore(state => state.user)
+    const updateUser = useAuthStore(state => state.updateUser)
     const logout = useAuthStore(state => state.logout)
     const router = useRouter()
     const { theme, setTheme } = useTheme()
     const [activeTab, setActiveTab] = useState('profile')
     const [showLogoutModal, setShowLogoutModal] = useState(false)
+    const [showPhotoModal, setShowPhotoModal] = useState(false)
     const [name, setName] = useState(user?.name || '')
     const [bio, setBio] = useState(user?.bio || '')
     const [title, setTitle] = useState(user?.title || '')
 
     const handleSave = async () => {
-        await new Promise(r => setTimeout(r, 600))
+        updateUser({ name, bio, title })
+        try {
+            await updateUserProfile({ name, bio, title })
+        } catch {}
         toast.success('Profile updated successfully')
+    }
+
+    const handleAvatarSave = async (newUrl: string) => {
+        updateUser({ avatar: newUrl })
+        try {
+            await updateUserProfile({ avatar: newUrl })
+        } catch {}
     }
 
     const handleLogout = () => {
@@ -43,14 +57,34 @@ export default function TeacherProfilePage() {
             <div className="max-w-3xl mx-auto space-y-5">
                 {/* Profile card */}
                 <div className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-6 flex flex-col sm:flex-row items-center sm:items-start gap-5">
-                    <div className="relative">
-                        <div className="w-20 h-20 rounded-2xl bg-primary-tint dark:bg-dark-surface2 flex items-center justify-center text-2xl font-bold text-primary dark:text-blue-300 border-2 border-primary/20">
-                            {(user?.name || 'T').charAt(0)}
+                    <div className="relative group cursor-pointer" onClick={() => setShowPhotoModal(true)}>
+                        <div className="w-20 h-20 rounded-2xl bg-primary-tint dark:bg-dark-surface2 flex items-center justify-center text-2xl font-bold text-primary dark:text-blue-300 border-2 border-primary/20 overflow-hidden shadow-xs group-hover:ring-2 group-hover:ring-primary/40 transition-all">
+                            {user?.avatar ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={user.avatar} alt={user?.name || 'Instructor'} className="w-full h-full object-cover" />
+                            ) : (
+                                getInitials(user?.name || 'T')
+                            )}
                         </div>
-                        <button className="absolute -bottom-1 -right-1 w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center shadow-card hover:bg-primary-dark transition-colors"><Camera size={13} /></button>
+                        <button
+                            type="button"
+                            title="Change profile photo"
+                            className="absolute -bottom-1 -right-1 w-7 h-7 bg-primary text-white rounded-full flex items-center justify-center shadow-card hover:bg-primary-dark transition-colors ring-2 ring-surface dark:ring-dark-surface"
+                        >
+                            <Camera size={13} />
+                        </button>
                     </div>
-                    <div className="text-center sm:text-left flex-1">
-                        <h2 className="font-sora font-bold text-xl text-text-primary dark:text-dark-text">{user?.name}</h2>
+                    <div className="text-center sm:text-left flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+                            <h2 className="font-sora font-bold text-xl text-text-primary dark:text-dark-text truncate">{user?.name}</h2>
+                            <button
+                                type="button"
+                                onClick={() => setShowPhotoModal(true)}
+                                className="px-2.5 py-1 text-xs font-semibold text-primary dark:text-blue-400 bg-primary/10 hover:bg-primary/20 rounded-lg transition-colors flex items-center gap-1"
+                            >
+                                <Camera size={11} /> Change Photo
+                            </button>
+                        </div>
                         <p className="text-text-muted text-sm">{user?.email}</p>
                         <p className="text-xs text-text-faint mt-1">{user?.title || 'Instructor at LearnSphere'}</p>
                     </div>
@@ -168,6 +202,15 @@ export default function TeacherProfilePage() {
                         </motion.div>
                     </div>
                 )}
+                {/* Profile Photo Options Modal */}
+                <ProfilePhotoModal
+                    isOpen={showPhotoModal}
+                    onClose={() => setShowPhotoModal(false)}
+                    currentAvatar={user?.avatar}
+                    userName={user?.name || 'Instructor'}
+                    userRole="TEACHER"
+                    onSave={handleAvatarSave}
+                />
             </div>
         </AppLayout>
     )

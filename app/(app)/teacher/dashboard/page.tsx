@@ -5,7 +5,9 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import { Users, BookOpen, TrendingUp, Star, Plus, Video, FileQuestion, BarChart3, ArrowRight, ChevronRight } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { teacherStats, courses, liveClasses, quizAttempts, students } from '@/data/mock-data'
+import { teacherStats, courses, liveClasses as fallbackClasses, quizAttempts, students } from '@/data/mock-data'
+import { getLiveClasses } from '@/lib/api/live-classes'
+import { connectSocket } from '@/lib/socket'
 import { formatNumber, formatDate, formatTime, cn } from '@/lib/utils'
 import {
     AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -17,7 +19,47 @@ const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } }
 export default function TeacherDashboard() {
     const stats = teacherStats
     const teacherCourses = courses.filter(c => c.instructorId === 't1' && c.status === 'PUBLISHED')
-    const upcoming = liveClasses.filter(lc => lc.instructorId === 't1' && lc.status === 'UPCOMING').slice(0, 3)
+    const [upcoming, setUpcoming] = React.useState<any[]>(
+        fallbackClasses.filter(lc => lc.status === 'UPCOMING').slice(0, 3)
+    )
+
+    const fetchTeacherClasses = () => {
+        getLiveClasses()
+            .then(res => {
+                if (res && res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+                    const mapped = res.classes
+                        .filter(c => c.status === 'UPCOMING')
+                        .slice(0, 4)
+                        .map(c => ({
+                            id: c.meetingId || c._id,
+                            meetingId: c.meetingId || c._id,
+                            _id: c._id,
+                            title: c.title,
+                            date: c.scheduledAt,
+                            status: c.status,
+                            attendees: c.attendeesCount || 0,
+                        }))
+                    setUpcoming(mapped)
+                }
+            })
+            .catch(() => {})
+    }
+
+    React.useEffect(() => {
+        fetchTeacherClasses()
+
+        const socket = connectSocket()
+        const onScheduled = () => fetchTeacherClasses()
+        const onStatus = () => fetchTeacherClasses()
+
+        socket.on('live_class_scheduled', onScheduled)
+        socket.on('live_class_status_changed', onStatus)
+
+        return () => {
+            socket.off('live_class_scheduled', onScheduled)
+            socket.off('live_class_status_changed', onStatus)
+        }
+    }, [])
 
     const statCards = [
         { label: 'Total Students', value: formatNumber(stats.totalStudents), icon: <Users size={18} />, color: 'text-primary', bg: 'bg-primary-tint dark:bg-dark-surface2', delta: '+1.2K this month' },

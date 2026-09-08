@@ -40,8 +40,10 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sora: ['var(--font-sora)', 'sans-serif'],
-        inter: ['var(--font-inter)', 'sans-serif'],
+        sans: ['"SF Pro Display"', '"SF Pro Text"', '"SF Pro"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sora: ['"SF Pro Display"', '"SF Pro Text"', '"SF Pro"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        inter: ['"SF Pro Display"', '"SF Pro Text"', '"SF Pro"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        heading: ['"SF Pro Display"', '"SF Pro Text"', '"SF Pro"', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
       },
       borderRadius: {
         xl2: '20px',

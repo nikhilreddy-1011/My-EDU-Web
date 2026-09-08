@@ -2,49 +2,78 @@
 
 import React from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     LayoutDashboard, BookOpen, Plus, Video, FileQuestion,
     Users, BarChart3, TrendingUp, Bell, User, HelpCircle,
-    Settings, ChevronLeft, ChevronRight, LogOut, GraduationCap, Zap
+    Settings, ChevronLeft, ChevronRight, LogOut, Compass,
+    Award, Heart, MessageSquare, CreditCard
 } from 'lucide-react'
 import { useAuthStore } from '@/store/use-auth-store'
 import { useAppStore } from '@/store/use-app-store'
 import { getInitials } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { getNotifications } from '@/lib/api/notifications'
+import { getConversations } from '@/lib/api/chat'
 
 interface NavItem {
     label: string
     href: string
     icon: React.ReactNode
+    section: 'MENU' | 'LEARNING' | 'COMMUNICATION' | 'ACCOUNT'
     badge?: number
     roles: ('STUDENT' | 'TEACHER' | 'ADMIN')[]
 }
 
 const navItems: NavItem[] = [
-    { label: 'Dashboard', href: '/student/dashboard', icon: <LayoutDashboard size={18} />, roles: ['STUDENT'] },
-    { label: 'Dashboard', href: '/teacher/dashboard', icon: <LayoutDashboard size={18} />, roles: ['TEACHER'] },
-    { label: 'My Courses', href: '/student/courses', icon: <BookOpen size={18} />, roles: ['STUDENT'] },
-    { label: 'My Courses', href: '/teacher/courses', icon: <BookOpen size={18} />, roles: ['TEACHER'] },
-    { label: 'Create Course', href: '/teacher/courses/create', icon: <Plus size={18} />, roles: ['TEACHER'] },
-    { label: 'Live Classes', href: '/student/live-classes', icon: <Video size={18} />, roles: ['STUDENT'] },
-    { label: 'Live Classes', href: '/teacher/live-classes', icon: <Video size={18} />, roles: ['TEACHER'] },
-    { label: 'Quizzes', href: '/student/quizzes', icon: <FileQuestion size={18} />, roles: ['STUDENT'] },
-    { label: 'Quizzes', href: '/teacher/quizzes', icon: <FileQuestion size={18} />, roles: ['TEACHER'] },
-    { label: 'Progress', href: '/student/progress', icon: <TrendingUp size={18} />, roles: ['STUDENT'] },
-    { label: 'Students', href: '/teacher/students', icon: <Users size={18} />, roles: ['TEACHER'] },
-    { label: 'Analytics', href: '/teacher/analytics', icon: <BarChart3 size={18} />, roles: ['TEACHER'] },
-    { label: 'Notifications', href: '/student/notifications', icon: <Bell size={18} />, roles: ['STUDENT'] },
-    { label: 'Notifications', href: '/teacher/notifications', icon: <Bell size={18} />, roles: ['TEACHER'] },
-    { label: 'Profile', href: '/student/profile', icon: <User size={18} />, roles: ['STUDENT'] },
-    { label: 'Profile', href: '/teacher/profile', icon: <User size={18} />, roles: ['TEACHER'] },
-]
+    // ── Student Menu ──────────────────────────────────────────
+    { label: 'Dashboard', href: '/student/dashboard', icon: <LayoutDashboard size={17} />, section: 'MENU', roles: ['STUDENT'] },
+    { label: 'Explore Courses', href: '/student/courses', icon: <Compass size={17} />, section: 'MENU', roles: ['STUDENT'] },
+    { label: 'My Courses', href: '/student/my-courses', icon: <BookOpen size={17} />, section: 'MENU', roles: ['STUDENT'] },
+    { label: 'Live Classes', href: '/student/live-classes', icon: <Video size={17} />, section: 'MENU', roles: ['STUDENT'] },
 
-const bottomItems: NavItem[] = [
-    { label: 'Help', href: '/help', icon: <HelpCircle size={18} />, roles: ['STUDENT', 'TEACHER'] },
-    { label: 'Settings', href: '/student/profile', icon: <Settings size={18} />, roles: ['STUDENT'] },
-    { label: 'Settings', href: '/teacher/profile', icon: <Settings size={18} />, roles: ['TEACHER'] },
+    // ── Student My Learning ───────────────────────────────────
+    { label: 'My Progress', href: '/student/progress', icon: <TrendingUp size={17} />, section: 'LEARNING', roles: ['STUDENT'] },
+    { label: 'Quizzes', href: '/student/quizzes', icon: <FileQuestion size={17} />, section: 'LEARNING', roles: ['STUDENT'] },
+    { label: 'Certificates', href: '/student/certificates', icon: <Award size={17} />, section: 'LEARNING', roles: ['STUDENT'] },
+    { label: 'Wishlist', href: '/student/wishlist', icon: <Heart size={17} />, section: 'LEARNING', roles: ['STUDENT'] },
+
+    // ── Student Communication ─────────────────────────────────
+    { label: 'Messages', href: '/student/messages', icon: <MessageSquare size={17} />, section: 'COMMUNICATION', roles: ['STUDENT'] },
+    { label: 'Notifications', href: '/student/notifications', icon: <Bell size={17} />, section: 'COMMUNICATION', roles: ['STUDENT'] },
+
+    // ── Student Account / Settings ────────────────────────────
+    { label: 'Profile', href: '/student/profile', icon: <User size={17} />, section: 'ACCOUNT', roles: ['STUDENT'] },
+    { label: 'Payment History', href: '/student/payments', icon: <CreditCard size={17} />, section: 'ACCOUNT', roles: ['STUDENT'] },
+    { label: 'Help Center', href: '/help', icon: <HelpCircle size={17} />, section: 'ACCOUNT', roles: ['STUDENT'] },
+
+    // ── Teacher Menu ──────────────────────────────────────────
+    { label: 'Dashboard', href: '/teacher/dashboard', icon: <LayoutDashboard size={17} />, section: 'MENU', roles: ['TEACHER'] },
+    { label: 'My Courses', href: '/teacher/courses', icon: <BookOpen size={17} />, section: 'MENU', roles: ['TEACHER'] },
+    { label: 'Create Course', href: '/teacher/courses/create', icon: <Plus size={17} />, section: 'MENU', roles: ['TEACHER'] },
+    { label: 'Live Classes', href: '/teacher/live-classes', icon: <Video size={17} />, section: 'MENU', roles: ['TEACHER'] },
+
+    // ── Teacher Academics / Teaching ──────────────────────────
+    { label: 'Students', href: '/teacher/students', icon: <Users size={17} />, section: 'LEARNING', roles: ['TEACHER'] },
+    { label: 'Analytics', href: '/teacher/analytics', icon: <BarChart3 size={17} />, section: 'LEARNING', roles: ['TEACHER'] },
+    { label: 'Quizzes', href: '/teacher/quizzes', icon: <FileQuestion size={17} />, section: 'LEARNING', roles: ['TEACHER'] },
+
+    // ── Teacher Communication ─────────────────────────────────
+    { label: 'Messages', href: '/student/messages', icon: <MessageSquare size={17} />, section: 'COMMUNICATION', roles: ['TEACHER'] },
+    { label: 'Notifications', href: '/teacher/notifications', icon: <Bell size={17} />, section: 'COMMUNICATION', roles: ['TEACHER'] },
+
+    // ── Teacher Account ───────────────────────────────────────
+    { label: 'Profile', href: '/teacher/profile', icon: <User size={17} />, section: 'ACCOUNT', roles: ['TEACHER'] },
+    { label: 'Help Center', href: '/help', icon: <HelpCircle size={17} />, section: 'ACCOUNT', roles: ['TEACHER'] },
+
+    // ── Admin Menu ────────────────────────────────────────────
+    { label: 'Dashboard', href: '/admin/dashboard', icon: <LayoutDashboard size={17} />, section: 'MENU', roles: ['ADMIN'] },
+
+    // ── Admin Account ─────────────────────────────────────────
+    { label: 'Profile', href: '/admin/profile', icon: <User size={17} />, section: 'ACCOUNT', roles: ['ADMIN'] },
+    { label: 'Help Center', href: '/help', icon: <HelpCircle size={17} />, section: 'ACCOUNT', roles: ['ADMIN'] },
 ]
 
 export function Sidebar() {
@@ -53,12 +82,50 @@ export function Sidebar() {
     const user = useAuthStore(state => state.user)
     const logout = useAuthStore(state => state.logout)
     const { isSidebarCollapsed, toggleSidebar } = useAppStore()
-    const unreadCount = useAppStore(state => state.unreadCount)
+    const storeUnreadCount = useAppStore(state => state.unreadCount)
+
+    const [liveUnreadNotifs, setLiveUnreadNotifs] = React.useState<number>(storeUnreadCount)
+    const [liveUnreadMessages, setLiveUnreadMessages] = React.useState<number>(0)
+
+    React.useEffect(() => {
+        if (!user) return
+
+        const fetchBadges = async () => {
+            try {
+                const notifRes = await getNotifications()
+                if (notifRes && typeof notifRes.unreadCount === 'number') {
+                    setLiveUnreadNotifs(notifRes.unreadCount)
+                }
+            } catch (err) {
+                // fallback to store
+            }
+
+            try {
+                const convRes = await getConversations()
+                if (convRes && Array.isArray(convRes.conversations)) {
+                    const isTeacher = user.role === 'TEACHER'
+                    const totalUnread = convRes.conversations.reduce((sum, c) => {
+                        return sum + (isTeacher ? (c.unreadTeacher || 0) : (c.unreadStudent || 0))
+                    }, 0)
+                    setLiveUnreadMessages(totalUnread)
+                }
+            } catch (err) {
+                // ignore
+            }
+        }
+
+        fetchBadges()
+        const interval = setInterval(fetchBadges, 25000)
+        return () => clearInterval(interval)
+    }, [user])
 
     const role = user?.role ?? 'STUDENT'
+    const allowedItems = navItems.filter(item => item.roles.includes(role as 'STUDENT' | 'TEACHER' | 'ADMIN'))
 
-    const filteredNavItems = navItems.filter(item => item.roles.includes(role as 'STUDENT' | 'TEACHER' | 'ADMIN'))
-    const filteredBottomItems = bottomItems.filter(item => item.roles.includes(role as 'STUDENT' | 'TEACHER' | 'ADMIN'))
+    const menuItems = allowedItems.filter(i => i.section === 'MENU')
+    const learningItems = allowedItems.filter(i => i.section === 'LEARNING')
+    const commsItems = allowedItems.filter(i => i.section === 'COMMUNICATION')
+    const accountItems = allowedItems.filter(i => i.section === 'ACCOUNT')
 
     const handleLogout = () => {
         logout()
@@ -66,89 +133,98 @@ export function Sidebar() {
     }
 
     const NavLink = ({ item }: { item: NavItem }) => {
-        const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
-        const showBadge = item.label === 'Notifications' && unreadCount > 0
+        const isActive = pathname === item.href || (item.href !== '/student/dashboard' && item.href !== '/teacher/dashboard' && pathname.startsWith(item.href + '/'))
+        const isNotification = item.label === 'Notifications'
+        const isMessage = item.label === 'Messages'
+        const badgeCount = isNotification ? liveUnreadNotifs : (isMessage ? liveUnreadMessages : (item.badge || 0))
+        const hasUnread = badgeCount > 0
 
         return (
-            <Link href={item.href} className="block">
-                <motion.div
+            <Link href={item.href} className="block relative">
+                <div
                     className={cn(
-                        'relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 cursor-pointer group',
+                        'group relative flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-150 cursor-pointer select-none text-sm font-medium',
                         isActive
-                            ? 'bg-white/15 text-white'
-                            : 'text-blue-200 hover:bg-white/10 hover:text-white'
+                            ? 'bg-primary/10 text-primary dark:bg-primary/20 dark:text-white font-semibold shadow-xs'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-white/[0.05]'
                     )}
-                    whileHover={{ x: 2 }}
-                    whileTap={{ scale: 0.98 }}
                 >
+                    {/* Active accent bar */}
                     {isActive && (
                         <motion.div
-                            layoutId="sidebar-active"
-                            className="absolute inset-0 bg-white/15 rounded-xl border border-white/20"
-                            transition={{ type: 'spring', duration: 0.4 }}
+                            layoutId="sidebar-active-pill"
+                            className="absolute left-0 w-1 h-5 rounded-r-full bg-primary dark:bg-indigo-400"
+                            transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                         />
                     )}
-                    <span className="relative z-10 flex-shrink-0">{item.icon}</span>
+
+                    <span className={cn(
+                        'flex-shrink-0 transition-colors',
+                        isActive ? 'text-primary dark:text-indigo-400' : 'text-slate-500 group-hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200'
+                    )}>
+                        {item.icon}
+                    </span>
+
                     <AnimatePresence>
                         {!isSidebarCollapsed && (
                             <motion.span
-                                className="relative z-10 text-sm font-medium truncate"
+                                className="truncate font-sans tracking-tight"
                                 initial={{ opacity: 0, width: 0 }}
                                 animate={{ opacity: 1, width: 'auto' }}
                                 exit={{ opacity: 0, width: 0 }}
-                                transition={{ duration: 0.2 }}
+                                transition={{ duration: 0.15 }}
                             >
                                 {item.label}
                             </motion.span>
                         )}
                     </AnimatePresence>
-                    {showBadge && !isSidebarCollapsed && (
-                        <span className="relative z-10 ml-auto bg-accent text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {unreadCount > 9 ? '9+' : unreadCount}
+
+                    {/* Notification/Message Pill */}
+                    {hasUnread && !isSidebarCollapsed && (
+                        <span className="ml-auto bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center shadow-xs">
+                            {badgeCount > 9 ? '9+' : badgeCount}
                         </span>
                     )}
-                    {showBadge && isSidebarCollapsed && (
-                        <span className="absolute top-1 right-1 w-2 h-2 bg-accent rounded-full" />
+
+                    {hasUnread && isSidebarCollapsed && (
+                        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-primary ring-2 ring-white dark:ring-dark-bg" />
                     )}
-                </motion.div>
+                </div>
             </Link>
+        )
+    }
+
+    const SectionHeader = ({ title }: { title: string }) => {
+        if (isSidebarCollapsed) return null
+        return (
+            <div className="px-3 pt-3.5 pb-1 text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase select-none">
+                {title}
+            </div>
         )
     }
 
     return (
         <motion.aside
-            className="fixed left-0 top-0 h-full z-40 flex flex-col"
-            style={{ background: 'linear-gradient(180deg, #2E3A8C 0%, #1F2861 100%)' }}
-            animate={{ width: isSidebarCollapsed ? 64 : 240 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className={cn(
+                'fixed left-0 top-0 h-full z-40 flex flex-col',
+                'bg-white/95 dark:bg-[#0D0F19]/95 backdrop-blur-2xl',
+                'border-r border-slate-200/80 dark:border-white/[0.08]',
+                'transition-all duration-300 ease-in-out shadow-sm'
+            )}
+            animate={{ width: isSidebarCollapsed ? 68 : 248 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
         >
-            {/* Logo */}
-            <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10">
-                <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center flex-shrink-0">
-                    <Zap size={16} className="text-white" />
-                </div>
-                <AnimatePresence>
-                    {!isSidebarCollapsed && (
-                        <motion.div
-                            initial={{ opacity: 0, width: 0 }}
-                            animate={{ opacity: 1, width: 'auto' }}
-                            exit={{ opacity: 0, width: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="overflow-hidden"
-                        >
-                            <span className="font-sora font-bold text-white text-lg whitespace-nowrap">
-                                LearnSphere
-                            </span>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-            </div>
-
-            {/* User */}
-            <div className="px-3 py-3 border-b border-white/10">
-                <div className={cn('flex items-center gap-3', isSidebarCollapsed && 'justify-center')}>
-                    <div className="w-8 h-8 rounded-full bg-accent/20 border border-accent/40 flex items-center justify-center flex-shrink-0">
-                        <span className="text-white text-xs font-bold">{getInitials(user?.name ?? 'U')}</span>
+            {/* Header: Logo */}
+            <div className="h-16 flex items-center justify-between px-3.5 border-b border-slate-100 dark:border-white/[0.06]">
+                <Link href="/" className="flex items-center gap-2.5 group overflow-hidden">
+                    <div className="relative w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-xl bg-gradient-to-tr from-primary to-indigo-500 p-1 shadow-xs group-hover:scale-105 transition-transform">
+                        <Image
+                            src="/logo-icon-clean.png"
+                            alt="LearnSphere"
+                            width={24}
+                            height={24}
+                            className="object-contain"
+                        />
                     </div>
                     <AnimatePresence>
                         {!isSidebarCollapsed && (
@@ -156,58 +232,147 @@ export function Sidebar() {
                                 initial={{ opacity: 0, width: 0 }}
                                 animate={{ opacity: 1, width: 'auto' }}
                                 exit={{ opacity: 0, width: 0 }}
-                                className="overflow-hidden"
+                                transition={{ duration: 0.15 }}
+                                className="flex flex-col min-w-0"
                             >
-                                <p className="text-white text-sm font-medium truncate whitespace-nowrap max-w-[130px]">
-                                    {user?.name}
-                                </p>
-                                <p className="text-blue-300 text-xs capitalize">
-                                    {user?.role?.toLowerCase()}
-                                </p>
+                                <span className="font-sora font-extrabold text-base tracking-tight text-slate-900 dark:text-white leading-tight">
+                                    LearnSphere
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-medium tracking-wide uppercase">
+                                    Next-Gen Learning
+                                </span>
                             </motion.div>
                         )}
                     </AnimatePresence>
-                </div>
+                </Link>
             </div>
 
-            {/* Nav */}
-            <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-                {filteredNavItems.map(item => (
-                    <NavLink key={`${item.label}-${item.href}`} item={item} />
-                ))}
-            </nav>
+            {/* Navigation Lists */}
+            <div className="flex-1 overflow-y-auto px-2 py-3 space-y-1 scrollbar-none">
+                {menuItems.length > 0 && (
+                    <>
+                        <SectionHeader title="MENU" />
+                        {menuItems.map(item => (
+                            <NavLink key={`${item.label}-${item.href}`} item={item} />
+                        ))}
+                    </>
+                )}
 
-            {/* Bottom */}
-            <div className="px-2 py-3 border-t border-white/10 space-y-0.5">
-                {filteredBottomItems.map(item => (
-                    <NavLink key={`${item.label}-${item.href}-bottom`} item={item} />
-                ))}
-                <motion.button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-red-300 hover:bg-red-500/10 hover:text-red-200 transition-colors duration-200"
-                    whileHover={{ x: 2 }}
-                    whileTap={{ scale: 0.98 }}
-                >
-                    <LogOut size={18} className="flex-shrink-0" />
-                    <AnimatePresence>
-                        {!isSidebarCollapsed && (
-                            <motion.span
-                                className="text-sm font-medium"
-                                initial={{ opacity: 0, width: 0 }}
-                                animate={{ opacity: 1, width: 'auto' }}
-                                exit={{ opacity: 0, width: 0 }}
+                {learningItems.length > 0 && (
+                    <>
+                        <SectionHeader title={role === 'TEACHER' ? 'TEACHING' : 'MY LEARNING'} />
+                        {learningItems.map(item => (
+                            <NavLink key={`${item.label}-${item.href}`} item={item} />
+                        ))}
+                    </>
+                )}
+
+                {commsItems.length > 0 && (
+                    <>
+                        <SectionHeader title="COMMUNICATION" />
+                        {commsItems.map(item => (
+                            <NavLink key={`${item.label}-${item.href}`} item={item} />
+                        ))}
+                    </>
+                )}
+
+                {accountItems.length > 0 && (
+                    <>
+                        <SectionHeader title="ACCOUNT" />
+                        {accountItems.map(item => (
+                            <NavLink key={`${item.label}-${item.href}`} item={item} />
+                        ))}
+                    </>
+                )}
+            </div>
+
+            {/* Bottom User Profile Card — Designed with comfortable bottom padding */}
+            <div className="p-2 border-t border-slate-100 dark:border-white/[0.06] pb-12 lg:pb-3 bg-slate-50/50 dark:bg-white/[0.02]">
+                <AnimatePresence>
+                    {!isSidebarCollapsed ? (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="p-2.5 rounded-2xl bg-white dark:bg-white/[0.04] border border-slate-200/70 dark:border-white/[0.08] shadow-2xs flex items-center gap-2.5"
+                        >
+                            {/* User Avatar with status */}
+                            <Link
+                                href={role === 'TEACHER' ? '/teacher/profile' : role === 'ADMIN' ? '/admin/profile' : '/student/profile'}
+                                className="relative w-8 h-8 rounded-xl bg-gradient-to-tr from-primary to-indigo-600 text-white font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-xs overflow-hidden hover:scale-105 transition-transform"
+                                title="Edit Profile & Photo"
                             >
-                                Log Out
-                            </motion.span>
-                        )}
-                    </AnimatePresence>
-                </motion.button>
+                                {user?.avatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={user.avatar} alt={user?.name || 'User'} className="w-full h-full object-cover" />
+                                ) : (
+                                    getInitials(user?.name ?? 'U')
+                                )}
+                                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#0D0F19]" />
+                            </Link>
+
+                            {/* User text */}
+                            <Link
+                                href={role === 'TEACHER' ? '/teacher/profile' : role === 'ADMIN' ? '/admin/profile' : '/student/profile'}
+                                className="flex-1 min-w-0 group/text"
+                            >
+                                <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate leading-snug group-hover/text:text-primary transition-colors">
+                                    {user?.name || 'Alex Johnson'}
+                                </p>
+                                <div className="flex items-center gap-1 mt-0.5">
+                                    <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 capitalize">
+                                        {user?.role === 'TEACHER' ? 'Instructor' : user?.role === 'ADMIN' ? 'Admin' : 'Student'}
+                                    </span>
+                                </div>
+                            </Link>
+
+                            {/* Logout Action */}
+                            <button
+                                onClick={handleLogout}
+                                title="Sign out"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                                aria-label="Log Out"
+                            >
+                                <LogOut size={15} />
+                            </button>
+                        </motion.div>
+                    ) : (
+                        <div className="flex flex-col items-center gap-2 py-1">
+                            <button
+                                onClick={() => router.push(role === 'TEACHER' ? '/teacher/profile' : role === 'ADMIN' ? '/admin/profile' : '/student/profile')}
+                                className="relative w-9 h-9 rounded-xl bg-gradient-to-tr from-primary to-indigo-600 text-white font-bold text-xs flex items-center justify-center shadow-xs hover:ring-2 hover:ring-primary/40 transition-all overflow-hidden"
+                                title={user?.name || 'Profile'}
+                            >
+                                {user?.avatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={user.avatar} alt={user?.name || 'User'} className="w-full h-full object-cover" />
+                                ) : (
+                                    getInitials(user?.name ?? 'U')
+                                )}
+                                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-[#0D0F19]" />
+                            </button>
+                            <button
+                                onClick={handleLogout}
+                                className="p-1.5 text-slate-400 hover:text-red-600 transition-colors"
+                                title="Sign out"
+                            >
+                                <LogOut size={16} />
+                            </button>
+                        </div>
+                    )}
+                </AnimatePresence>
             </div>
 
-            {/* Collapse toggle */}
+            {/* Minimalist Collapse Toggle on border */}
             <button
                 onClick={toggleSidebar}
-                className="absolute -right-3 top-20 w-6 h-6 rounded-full bg-primary border border-white/20 flex items-center justify-center text-white hover:bg-primary-dark transition-colors z-50 shadow-md"
+                className={cn(
+                    'absolute -right-3 top-20 w-6 h-6 rounded-full',
+                    'bg-white dark:bg-[#1A1D2E] border border-slate-200 dark:border-white/[0.12]',
+                    'flex items-center justify-center text-slate-600 dark:text-slate-300',
+                    'hover:text-primary hover:border-primary/40 dark:hover:text-white',
+                    'shadow-xs transition-all z-50'
+                )}
                 aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
                 {isSidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}

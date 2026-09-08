@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -8,11 +8,12 @@ import {
     Play, Pause, Volume2, Maximize, Settings, Clock,
     ChevronLeft, ChevronRight, CheckCircle2, FileText,
     MessageSquare, BookOpen, Lock, Bot, X, Send, Copy,
-    RefreshCw, Lightbulb, List, ArrowLeft
+    RefreshCw, Lightbulb, List, ArrowLeft, ShieldAlert
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
 import { modulesForC1, courses } from '@/data/mock-data'
-import { cn } from '@/lib/utils'
+import { checkCourseAccess } from '@/lib/api/courses'
+import { cn, formatPrice } from '@/lib/utils'
 import { toast } from 'sonner'
 
 const MOCK_AI_RESPONSES: Record<string, string> = {
@@ -42,6 +43,34 @@ export default function LessonPage() {
     const [isTyping, setIsTyping] = useState(false)
     const [expandedMods, setExpandedMods] = useState(new Set(['m1', 'm2']))
 
+    // Course Access State
+    const [isCheckingAccess, setIsCheckingAccess] = useState(true)
+    const [hasAccess, setHasAccess] = useState<boolean | null>(null)
+    const [courseDetails, setCourseDetails] = useState<any>(null)
+
+    useEffect(() => {
+        let isMounted = true
+        const verify = async () => {
+            if (!id) return
+            try {
+                const res = await checkCourseAccess(id)
+                if (isMounted) {
+                    setHasAccess(res.hasAccess)
+                    setCourseDetails(res.course)
+                }
+            } catch (err) {
+                // If checking fails or unauthenticated
+                if (isMounted) {
+                    setHasAccess(false)
+                }
+            } finally {
+                if (isMounted) setIsCheckingAccess(false)
+            }
+        }
+        verify()
+        return () => { isMounted = false }
+    }, [id])
+
     const markComplete = () => {
         setIsCompleted(true)
         toast.success('Lesson marked as complete! ✅')
@@ -59,6 +88,47 @@ export default function LessonPage() {
         const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'assistant', content: MOCK_AI_RESPONSES[key], timestamp: new Date().toISOString() }
         setMessages(prev => [...prev, aiMsg])
         setIsTyping(false)
+    }
+
+    // Locked screen if unauthorized
+    if (isCheckingAccess) {
+        return (
+            <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+                <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin mb-3" />
+                <p className="text-xs text-slate-400">Verifying course enrollment...</p>
+            </div>
+        )
+    }
+
+    if (hasAccess === false) {
+        return (
+            <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center font-sans">
+                <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-center mb-5 shadow-lg">
+                    <Lock size={32} />
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold font-sora text-white mb-2 tracking-tight">
+                    You don't have access to this course
+                </h1>
+                <p className="text-sm text-slate-400 max-w-md mx-auto mb-8 leading-relaxed">
+                    This course requires enrollment or purchase before you can view lessons, stream video content, and complete assignments.
+                </p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                    <Link
+                        href={`/student/courses/${id}`}
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-primary text-white text-sm font-semibold hover:bg-primary/90 transition-all shadow-md"
+                    >
+                        <BookOpen size={16} />
+                        {courseDetails?.isFree ? 'Enroll for Free' : `Purchase Course ${courseDetails?.price ? `• ${formatPrice(courseDetails.price)}` : ''}`}
+                    </Link>
+                    <Link
+                        href="/student/courses"
+                        className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/[0.08] text-slate-300 text-sm font-semibold hover:bg-white/[0.14] transition-colors"
+                    >
+                        Browse All Courses
+                    </Link>
+                </div>
+            </div>
+        )
     }
 
     return (

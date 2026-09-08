@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
@@ -10,8 +10,10 @@ import {
     Play, Mic, Layers, Radio
 } from 'lucide-react'
 import { AppLayout } from '@/components/layouts/app-layout'
-import { liveClasses, mockLectures, mockNotes, courses, Lecture, ClassNote } from '@/data/mock-data'
+import { liveClasses as fallbackClasses, mockLectures, mockNotes, courses as fallbackCourses, Lecture, ClassNote } from '@/data/mock-data'
 import { formatDate, formatTime, formatDuration, cn } from '@/lib/utils'
+import { getLiveClasses, scheduleLiveClass, updateLiveClassStatus, deleteLiveClass, LiveClassItem } from '@/lib/api/live-classes'
+import { getCourses } from '@/lib/api/courses'
 import { toast } from 'sonner'
 
 const MAIN_TABS = ['Live Classes', 'Lectures', 'Notes'] as const
@@ -49,8 +51,9 @@ export default function TeacherLiveClassesPage() {
     // Schedule form state
     const [form, setForm] = useState({
         title: '', description: '', date: '', duration: '60',
-        course: 'c1', maxSeats: '500', platform: 'zoom', recurring: 'none'
+        course: 'all', maxSeats: '500', platform: 'in-app', recurring: 'none'
     })
+    const [isScheduling, setIsScheduling] = useState(false)
 
     // Lecture upload state
     const [lecForm, setLecForm] = useState({ title: '', description: '', course: 'c1', tags: '' })
@@ -62,28 +65,123 @@ export default function TeacherLiveClassesPage() {
     const [noteForm, setNoteForm] = useState({ title: '', description: '', course: 'c1' })
     const [noteFile, setNoteFile] = useState<File | null>(null)
 
-    // Local lecture/notes lists
+    // Local lists
+    const [classesList, setClassesList] = useState<any[]>(fallbackClasses)
+    const [availableCourses, setAvailableCourses] = useState<any[]>(fallbackCourses)
+    const [isLoadingClasses, setIsLoadingClasses] = useState(true)
+
     const [lectures, setLectures] = useState<Lecture[]>(mockLectures.filter(l => l.instructorId === 't1'))
     const [notes, setNotes] = useState<ClassNote[]>(mockNotes.filter(n => n.instructorId === 't1'))
 
     const fileInputRef = useRef<HTMLInputElement>(null)
     const noteInputRef = useRef<HTMLInputElement>(null)
 
-    const myClasses = liveClasses.filter(lc => lc.instructorId === 't1')
-    const filteredClasses = myClasses.filter(lc =>
+    const fetchClasses = async () => {
+        setIsLoadingClasses(true)
+        try {
+            const res = await getLiveClasses()
+            if (res.success && Array.isArray(res.classes) && res.classes.length > 0) {
+                const mapped = res.classes.map(c => ({
+                    id: c.meetingId || c._id,
+                    meetingId: c.meetingId || c._id,
+                    _id: c._id,
+                    title: c.title,
+                    description: c.description,
+                    course: {
+                        id: c.course?._id || 'c1',
+                        title: c.courseTitle || c.course?.title || 'General Session',
+                        category: c.course?.category || 'Live Workshop',
+                    },
+                    instructorId: typeof c.instructor === 'string' ? c.instructor : (c.instructor?._id || 't1'),
+                    instructor: {
+                        name: c.instructorName || (typeof c.instructor === 'object' ? c.instructor?.name : 'Instructor'),
+                        avatar: c.instructorAvatar || (typeof c.instructor === 'object' ? c.instructor?.avatar : ''),
+                        title: 'Lead Instructor',
+                    },
+                    date: c.scheduledAt,
+                    duration: c.duration || 60,
+                    status: c.status,
+                    attendees: c.attendeesCount || 0,
+                    maxAttendees: c.maxSeats || 500,
+                    meetingUrl: c.meetingUrl || `https://learnsphere.io/live/${c.meetingId || c._id}`,
+                    tags: c.tags || [],
+                }))
+                setClassesList(mapped)
+            }
+        } catch (err) {
+            console.error('Failed to load live classes from API:', err)
+        } finally {
+            setIsLoadingClasses(false)
+        }
+    }
+
+    useEffect(() => {
+        fetchClasses()
+
+        getCourses()
+            .then(res => {
+                if (res && res.success && Array.isArray(res.courses)) {
+                    setAvailableCourses(res.courses)
+                }
+            })
+            .catch(() => {})
+    }, [])
+
+    const filteredClasses = classesList.filter(lc =>
         classTab === 'Live Now' ? lc.status === 'LIVE' :
         classTab === 'Upcoming' ? lc.status === 'UPCOMING' :
         lc.status === 'COMPLETED'
-    ).filter(lc => lc.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    ).filter(lc => lc.title?.toLowerCase().includes(searchQuery.toLowerCase()))
 
-    const myCourses = courses.filter(c => c.instructorId === 't1')
-
-    const handleSchedule = (e: React.FormEvent) => {
+    const handleSchedule = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!form.title || !form.date) { toast.error('Please fill all required fields'); return }
-        toast.success(`"${form.title}" scheduled! 📅 Invite links sent to enrolled students.`)
-        setShowSchedule(false)
-        setForm({ title: '', description: '', date: '', duration: '60', course: 'c1', maxSeats: '500', platform: 'zoom', recurring: 'none' })
+        if (!form.title.trim() || !form.date) {
+            toast.error('Please enter a class title and scheduled date/time')
+            return
+        }
+
+        setIsScheduling(true)
+        try {
+            const res = await scheduleLiveClass({
+                title: form.title,
+                description: form.description,
+                course: form.course === 'all' ? undefined : form.course,
+                date: form.date,
+                duration: Number(form.duration) || 60,
+                maxSeats: Number(form.maxSeats) || 500,
+                platform: form.platform,
+            })
+
+            if (res.success && res.liveClass) {
+                toast.success(`"${res.liveClass.title}" scheduled! 📅 Invite links sent to students.`)
+                await fetchClasses()
+                setClassTab('Upcoming')
+                setShowSchedule(false)
+                setForm({
+                    title: '', description: '', date: '', duration: '60',
+                    course: 'all', maxSeats: '500', platform: 'in-app', recurring: 'none'
+                })
+            }
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to schedule live class')
+        } finally {
+            setIsScheduling(false)
+        }
+    }
+
+    const handleStartLive = async (classItem: any) => {
+        try {
+            await updateLiveClassStatus(classItem.meetingId || classItem._id || classItem.id, 'LIVE')
+            toast.success(`"${classItem.title}" is now LIVE! 🔴`)
+            setClassesList(prev => prev.map(c => 
+                (c.id === classItem.id || c.meetingId === classItem.meetingId) 
+                    ? { ...c, status: 'LIVE' } 
+                    : c
+            ))
+            setClassTab('Live Now')
+        } catch (err: any) {
+            toast.error(err.message || 'Failed to update class status to LIVE')
+        }
     }
 
     const simulateUpload = (cb: () => void) => {
@@ -167,10 +265,10 @@ export default function TeacherLiveClassesPage() {
                 {/* Stats bar */}
                 <div className="grid grid-cols-4 gap-3">
                     {[
-                        { label: 'Total Classes', value: myClasses.length, icon: <Radio size={14} />, color: 'text-primary bg-primary-tint' },
+                        { label: 'Total Classes', value: classesList.length, icon: <Radio size={14} />, color: 'text-primary bg-primary-tint' },
                         { label: 'Lectures', value: lectures.length, icon: <Film size={14} />, color: 'text-violet-600 bg-violet-50 dark:bg-violet-900/20' },
                         { label: 'Notes', value: notes.length, icon: <FileText size={14} />, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' },
-                        { label: 'Total Students', value: myClasses.reduce((a, lc) => a + (lc.attendees || 0), 0).toLocaleString(), icon: <Users size={14} />, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' },
+                        { label: 'Total Students', value: classesList.reduce((a: number, lc: any) => a + (lc.attendees || 0), 0).toLocaleString(), icon: <Users size={14} />, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' },
                     ].map(s => (
                         <div key={s.label} className="bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-2xl p-4">
                             <div className={cn('w-8 h-8 rounded-xl flex items-center justify-center mb-2', s.color)}>{s.icon}</div>
@@ -201,7 +299,7 @@ export default function TeacherLiveClassesPage() {
                         <div className="flex gap-3 items-center flex-wrap">
                             <div className="flex gap-1 p-1 bg-surface dark:bg-dark-surface border border-border dark:border-dark-border rounded-xl">
                                 {CLASS_TABS.map(tab => {
-                                    const count = myClasses.filter(lc =>
+                                    const count = classesList.filter((lc: any) =>
                                         tab === 'Live Now' ? lc.status === 'LIVE' :
                                         tab === 'Upcoming' ? lc.status === 'UPCOMING' : lc.status === 'COMPLETED'
                                     ).length
@@ -229,7 +327,7 @@ export default function TeacherLiveClassesPage() {
                         ) : (
                             <div className="space-y-4">
                                 {filteredClasses.map((lc, i) => (
-                                    <ClassCard key={lc.id} lc={lc} index={i} isTeacher />
+                                    <ClassCard key={lc.id} lc={lc} index={i} isTeacher onStartLive={handleStartLive} />
                                 ))}
                             </div>
                         )}
@@ -371,7 +469,8 @@ export default function TeacherLiveClassesPage() {
                                 <FieldRow>
                                     <Field label="Course">
                                         <select value={form.course} onChange={e => setForm(p => ({ ...p, course: e.target.value }))} className="input-base">
-                                            {myCourses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                                            <option value="all">General Live Session (All Students)</option>
+                                            {availableCourses.map(c => <option key={c.id || c._id} value={c.id || c._id}>{c.title}</option>)}
                                         </select>
                                     </Field>
                                     <Field label="Max Seats">
@@ -400,9 +499,11 @@ export default function TeacherLiveClassesPage() {
                                 <div className="flex gap-3 pt-2">
                                     <button type="button" onClick={() => setShowSchedule(false)}
                                         className="flex-1 py-2.5 border border-border dark:border-dark-border rounded-xl text-text-muted text-sm hover:border-primary/30 transition-colors">Cancel</button>
-                                    <motion.button type="submit"
-                                        className="flex-1 py-2.5 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-accent-hover transition-colors"
-                                        whileTap={{ scale: 0.97 }}>Schedule Class</motion.button>
+                                    <motion.button type="submit" disabled={isScheduling}
+                                        className="flex-1 py-2.5 bg-accent text-white rounded-xl text-sm font-semibold hover:bg-accent-hover disabled:opacity-50 transition-colors"
+                                        whileTap={{ scale: 0.97 }}>
+                                        {isScheduling ? 'Scheduling...' : 'Schedule Class'}
+                                    </motion.button>
                                 </div>
                             </form>
                         </Modal>
@@ -457,7 +558,7 @@ export default function TeacherLiveClassesPage() {
                                 <FieldRow>
                                     <Field label="Course">
                                         <select value={lecForm.course} onChange={e => setLecForm(p => ({ ...p, course: e.target.value }))} className="input-base">
-                                            {myCourses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                                            {availableCourses.map((c: any) => <option key={c.id || c._id} value={c.id || c._id}>{c.title}</option>)}
                                         </select>
                                     </Field>
                                     <Field label="Tags (comma-separated)">
@@ -514,7 +615,7 @@ export default function TeacherLiveClassesPage() {
                                 </Field>
                                 <Field label="Course">
                                     <select value={noteForm.course} onChange={e => setNoteForm(p => ({ ...p, course: e.target.value }))} className="input-base">
-                                        {myCourses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}
+                                        {availableCourses.map((c: any) => <option key={c.id || c._id} value={c.id || c._id}>{c.title}</option>)}
                                     </select>
                                 </Field>
                                 <div className="flex gap-3 pt-2">
@@ -536,7 +637,7 @@ export default function TeacherLiveClassesPage() {
 }
 
 // ── Shared ClassCard ──────────────────────────────────────────
-function ClassCard({ lc, index, isTeacher }: { lc: typeof liveClasses[0]; index: number; isTeacher?: boolean }) {
+function ClassCard({ lc, index, isTeacher, onStartLive }: { lc: any; index: number; isTeacher?: boolean; onStartLive?: (classItem: any) => void }) {
     const countdown = useCountdown(lc.date)
     const fillPct = lc.maxAttendees ? Math.round((lc.attendees! / lc.maxAttendees) * 100) : 0
 
@@ -597,7 +698,7 @@ function ClassCard({ lc, index, isTeacher }: { lc: typeof liveClasses[0]; index:
                 {/* Action buttons */}
                 <div className="flex gap-2 flex-shrink-0 flex-wrap">
                     {lc.status === 'LIVE' && (
-                        <Link href={`/student/live-classes/${lc.id}`}>
+                        <Link href={`/student/live-classes/${lc.meetingId || lc.id}`}>
                             <button className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2">
                                 <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                                 {isTeacher ? 'Start Class' : 'Join Now'}
@@ -606,17 +707,23 @@ function ClassCard({ lc, index, isTeacher }: { lc: typeof liveClasses[0]; index:
                     )}
                     {lc.status === 'UPCOMING' && (
                         <>
-                            <button onClick={() => { navigator.clipboard.writeText(lc.meetingUrl); toast.success('Invite link copied!') }}
+                            {isTeacher && (
+                                <button
+                                    onClick={() => onStartLive?.(lc)}
+                                    className="px-3.5 py-2 bg-red-600 text-white text-xs font-semibold rounded-xl hover:bg-red-700 transition-colors flex items-center gap-1.5 shadow-xs"
+                                >
+                                    <Radio size={13} className="animate-pulse" /> Start Class Now
+                                </button>
+                            )}
+                            <button onClick={() => { navigator.clipboard.writeText(lc.meetingUrl || window.location.origin + `/student/live-classes/${lc.meetingId || lc.id}`); toast.success('Invite link copied!') }}
                                 className="flex items-center gap-1.5 px-3 py-2 border border-border dark:border-dark-border text-text-muted text-xs rounded-xl hover:border-primary/30 transition-colors">
                                 <Copy size={12} /> Copy Link
                             </button>
-                            {isTeacher && (
-                                <Link href={`/student/live-classes/${lc.id}`}>
-                                    <button className="px-3 py-2 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary-tint transition-colors flex items-center gap-1.5">
-                                        <Monitor size={12} /> Preview Room
-                                    </button>
-                                </Link>
-                            )}
+                            <Link href={`/student/live-classes/${lc.meetingId || lc.id}`}>
+                                <button className="px-3 py-2 border border-primary/30 text-primary text-xs rounded-xl hover:bg-primary-tint transition-colors flex items-center gap-1.5">
+                                    <Monitor size={12} /> Join Room
+                                </button>
+                            </Link>
                         </>
                     )}
                     {lc.status === 'COMPLETED' && (

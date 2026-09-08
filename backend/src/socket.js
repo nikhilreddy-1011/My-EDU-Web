@@ -8,12 +8,17 @@ let io = null;
 const initSocket = (server) => {
     io = new Server(server, {
         cors: {
-            origin: [
-                process.env.FRONTEND_URL || 'http://localhost:3000',
-                'http://localhost:3000',
-                'http://localhost:3001',
-                'http://127.0.0.1:3000',
-            ],
+            origin: (origin, callback) => {
+                if (!origin) return callback(null, true);
+                if (
+                    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+                    /^https:\/\/([a-zA-Z0-9_-]+\.)*vercel\.app$/.test(origin) ||
+                    origin === process.env.FRONTEND_URL
+                ) {
+                    return callback(null, true);
+                }
+                return callback(null, true);
+            },
             methods: ['GET', 'POST', 'PATCH'],
             credentials: true,
         },

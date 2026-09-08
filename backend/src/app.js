@@ -26,36 +26,56 @@ const app = express();
 // --------------------------------------------------
 app.use(helmet());
 
-// CORS — allow frontend origin
+// CORS — allow frontend origin and preview environments
 const allowedOrigins = [
     process.env.FRONTEND_URL,
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:3002',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
+    'http://127.0.0.1:3002',
 ].filter(Boolean);
 
 app.use(
     cors({
         origin: (origin, callback) => {
-            // allow requests with no origin (mobile apps, curl, etc)
+            // Allow requests with no origin (mobile apps, curl, server-to-server)
             if (!origin) return callback(null, true);
-            if (
-                allowedOrigins.includes(origin) ||
-                /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
-            ) {
+
+            // Allow any localhost or 127.0.0.1 on any port
+            if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
                 return callback(null, true);
             }
-            callback(new Error('Not allowed by CORS'));
+
+            // Allow all Vercel domains (*.vercel.app)
+            if (/^https:\/\/([a-zA-Z0-9_-]+\.)*vercel\.app$/.test(origin)) {
+                return callback(null, true);
+            }
+
+            // Allow configured origins
+            if (allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+
+            // In development, allow any origin to facilitate testing
+            if (process.env.NODE_ENV !== 'production') {
+                return callback(null, true);
+            }
+
+            // Gracefully disallow without crashing with an unhandled 500 error
+            callback(null, false);
         },
         credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     })
 );
 
-// Rate limiting — 100 requests per 10 minutes per IP
+// Rate limiting — generous limit in dev (5000), 500 in prod per 10 minutes
 const limiter = rateLimit({
     windowMs: 10 * 60 * 1000,
-    max: 100,
+    max: process.env.NODE_ENV === 'production' ? 500 : 5000,
     message: { success: false, message: 'Too many requests, please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,

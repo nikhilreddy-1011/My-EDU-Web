@@ -87,7 +87,7 @@ const updateCourse = async (req, res, next) => {
         }
 
         course = await Course.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
+            returnDocument: 'after',
             runValidators: true,
         }).populate('instructor', 'name avatar');
 

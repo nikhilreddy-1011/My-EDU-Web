@@ -48,8 +48,8 @@ app.use(
                 return callback(null, true);
             }
 
-            // Allow all Vercel domains (*.vercel.app)
-            if (/^https:\/\/([a-zA-Z0-9_-]+\.)*vercel\.app$/.test(origin)) {
+            // Allow all Vercel domains (*.vercel.app) or Render domains
+            if (origin.includes('vercel.app') || origin.includes('onrender.com')) {
                 return callback(null, true);
             }
 
